@@ -167,7 +167,7 @@ const ScheduleInterviewPage = () => {
                     <select
                       value={selectedCandidate?.id || ""}
                       onChange={(e) => {
-                        const candidate = candidates.find(c => c.id === e.target.value);
+                        const candidate = candidates.find(c => String(c.id) === e.target.value);
                         setSelectedCandidate(candidate || null);
                       }}
                       className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white focus:ring-2 focus:ring-purple-500"
