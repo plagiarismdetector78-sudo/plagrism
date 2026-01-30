@@ -72,6 +72,14 @@ const ScheduleInterviewPage = () => {
       return;
     }
 
+    // Validate that scheduled time is not in the past
+    const scheduledDate = new Date(scheduleData.scheduledAt);
+    const now = new Date();
+    if (scheduledDate < now) {
+      alert("Cannot schedule an interview in the past. Please select a future date and time.");
+      return;
+    }
+
     setSaving(true);
 
     try {
@@ -85,7 +93,7 @@ const ScheduleInterviewPage = () => {
         body: JSON.stringify({
           candidateId: resolveCandidateId(selectedCandidate),
           interviewerId: localStorage.getItem("userId"),
-          scheduledAt: new Date(scheduleData.scheduledAt).toISOString(),
+          scheduledAt: scheduleData.scheduledAt, // Keep as-is, let backend handle timezone
           duration: scheduleData.duration,
           interviewType: scheduleData.interviewType,
           position: scheduleData.position,
@@ -194,11 +202,19 @@ const ScheduleInterviewPage = () => {
                     <input
                       type="datetime-local"
                       value={scheduleData.scheduledAt}
+                      min={(() => {
+                        const now = new Date();
+                        now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+                        return now.toISOString().slice(0, 16);
+                      })()}
                       onChange={(e) =>
                         setScheduleData({ ...scheduleData, scheduledAt: e.target.value })
                       }
                       className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white focus:ring-2 focus:ring-purple-500"
                     />
+                    <p className="text-xs text-gray-400 mt-2">
+                      Cannot schedule interviews in the past
+                    </p>
                   </div>
 
                   {/* Position */}

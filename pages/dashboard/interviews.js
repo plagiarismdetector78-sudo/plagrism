@@ -17,20 +17,66 @@ const InterviewsPage = () => {
     const savedState = localStorage.getItem('sidebarCollapsed');
     if (savedState === 'true') setSidebarCollapsed(true);
     fetchInterviews();
+    
+    // Auto-update interview status every minute
+    const statusUpdateInterval = setInterval(() => {
+      updateExpiredInterviews();
+    }, 60000);
+    
+    return () => clearInterval(statusUpdateInterval);
   }, []);
 
   const fetchInterviews = async () => {
     try {
       const userId = localStorage.getItem('userId');
-      const response = await fetch(`/api/get-my-interviews-by-id?userId=${userId}`);
+      const response = await fetch(`/api/get-my-interviews-by-candidate-id?userId=${userId}`);
       const data = await response.json();
       if (data.success) {
-        setInterviews(data.interviews || []);
+        // Normalize field names to match what the component expects
+        const normalizedInterviews = (data.interviews || []).map(interview => ({
+          ...interview,
+          scheduledAt: interview.scheduled_at,
+          meetingRoomId: interview.meeting_room_id,
+          position: interview.position || 'Interview',
+          company: interview.company || 'N/A'
+        }));
+        setInterviews(normalizedInterviews);
+        updateExpiredInterviews(normalizedInterviews);
       }
     } catch (error) {
       console.error('Error fetching interviews:', error);
     } finally {
       setLoading(false);
+    }
+  };
+  
+  const updateExpiredInterviews = async (interviewList = interviews) => {
+    const now = new Date();
+    const expiredInterviews = interviewList.filter(interview => {
+      if (!interview.scheduledAt || interview.status === 'completed' || interview.status === 'cancelled' || interview.status === 'pending') return false;
+      const scheduledDate = new Date(interview.scheduledAt);
+      const duration = interview.duration || 60;
+      const endTime = new Date(scheduledDate.getTime() + duration * 60000);
+      return endTime < now;
+    });
+    
+    for (const interview of expiredInterviews) {
+      try {
+        await fetch('/api/update-interview-status', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ 
+            interviewId: interview.id,
+            status: 'pending' // Changed from 'completed' to 'pending'
+          })
+        });
+      } catch (error) {
+        console.error('Error updating interview status:', error);
+      }
+    }
+    
+    if (expiredInterviews.length > 0) {
+      fetchInterviews();
     }
   };
 
@@ -47,11 +93,12 @@ const InterviewsPage = () => {
 
   const formatDate = (dateString) => {
     if (!dateString) return { date: 'N/A', time: '', full: '' };
+    // Parse as local time, not UTC
     const date = new Date(dateString);
     return {
-      date: date.toLocaleDateString(),
-      time: date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      full: date.toLocaleString(),
+      date: date.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }),
+      time: date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }),
+      full: date.toLocaleString('en-US'),
     };
   };
 
@@ -84,12 +131,24 @@ const InterviewsPage = () => {
   };
 
   const filteredInterviews = interviews.filter(interview => {
-    const matchesFilter = activeFilter === 'all' || 
-      (activeFilter === 'upcoming' && new Date(interview.scheduledAt) > new Date()) ||
-      (activeFilter === 'completed' && interview.status === 'completed') ||
-      (activeFilter === 'past' && new Date(interview.scheduledAt) <= new Date() && interview.status !== 'cancelled');
+    const now = new Date();
+    const scheduledDate = interview.scheduledAt ? new Date(interview.scheduledAt) : null;
     
-    const matchesSearch = interview.position?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    // Filter by status
+    let matchesFilter = false;
+    if (activeFilter === 'all') {
+      matchesFilter = true;
+    } else if (activeFilter === 'upcoming') {
+      matchesFilter = scheduledDate && scheduledDate > now && interview.status !== 'cancelled';
+    } else if (activeFilter === 'completed') {
+      matchesFilter = interview.status === 'completed';
+    } else if (activeFilter === 'past') {
+      matchesFilter = scheduledDate && scheduledDate <= now && interview.status !== 'cancelled';
+    }
+    
+    // Search filter
+    const matchesSearch = !searchTerm || 
+                         interview.position?.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          interview.company?.toLowerCase().includes(searchTerm.toLowerCase());
     
     return matchesFilter && matchesSearch;
@@ -130,6 +189,50 @@ const InterviewsPage = () => {
               </p>
             </div>
 
+            {/* Filter Tabs */}
+            <div className="backdrop-blur-xl bg-white/5 rounded-2xl border border-white/10 p-1 mb-6 inline-flex flex-wrap">
+              <button
+                onClick={() => setActiveFilter('all')}
+                className={`px-4 py-2 rounded-xl text-sm font-medium transition-all duration-300 ${
+                  activeFilter === 'all'
+                    ? 'bg-gradient-to-r from-purple-500 to-pink-500 text-white shadow-lg'
+                    : 'text-gray-400 hover:text-white hover:bg-white/5'
+                }`}
+              >
+                All
+              </button>
+              <button
+                onClick={() => setActiveFilter('upcoming')}
+                className={`px-4 py-2 rounded-xl text-sm font-medium transition-all duration-300 ${
+                  activeFilter === 'upcoming'
+                    ? 'bg-gradient-to-r from-purple-500 to-pink-500 text-white shadow-lg'
+                    : 'text-gray-400 hover:text-white hover:bg-white/5'
+                }`}
+              >
+                Upcoming
+              </button>
+              <button
+                onClick={() => setActiveFilter('completed')}
+                className={`px-4 py-2 rounded-xl text-sm font-medium transition-all duration-300 ${
+                  activeFilter === 'completed'
+                    ? 'bg-gradient-to-r from-purple-500 to-pink-500 text-white shadow-lg'
+                    : 'text-gray-400 hover:text-white hover:bg-white/5'
+                }`}
+              >
+                Completed
+              </button>
+              <button
+                onClick={() => setActiveFilter('past')}
+                className={`px-4 py-2 rounded-xl text-sm font-medium transition-all duration-300 ${
+                  activeFilter === 'past'
+                    ? 'bg-gradient-to-r from-purple-500 to-pink-500 text-white shadow-lg'
+                    : 'text-gray-400 hover:text-white hover:bg-white/5'
+                }`}
+              >
+                Past
+              </button>
+            </div>
+            
             {/* Stats */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
               {[
@@ -153,38 +256,30 @@ const InterviewsPage = () => {
                 </div>
               ))}
             </div>
-
-            {/* Filters and Search */}
-            <div className="backdrop-blur-xl bg-white/5 rounded-2xl border border-white/10 p-4 md:p-6 mb-6">
-              <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-                <div className="flex flex-wrap gap-2">
-                  {['all', 'upcoming', 'completed', 'past'].map(filter => (
-                    <button
-                      key={filter}
-                      onClick={() => setActiveFilter(filter)}
-                      className={`px-4 py-2 rounded-xl text-sm font-medium capitalize transition-all duration-300 ${
-                        activeFilter === filter
-                          ? 'bg-purple-500 text-white shadow-lg'
-                          : 'bg-white/10 text-gray-300 hover:bg-white/20'
-                      }`}
-                    >
-                      {filter}
-                    </button>
-                  ))}
-                </div>
-                
-                <div className="flex items-center bg-white/10 border border-white/20 rounded-xl px-4 py-2 min-w-80">
-                  <svg className="w-5 h-5 text-gray-400 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                  </svg>
-                  <input
-                    type="text"
-                    placeholder="Search interviews..."
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    className="flex-1 bg-transparent text-white placeholder-gray-400 focus:outline-none text-sm"
-                  />
-                </div>
+            
+            {/* Search Bar */}
+            <div className="backdrop-blur-xl bg-white/5 rounded-2xl border border-white/10 p-4 mb-6">
+              <div className="flex items-center space-x-3">
+                <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+                <input
+                  type="text"
+                  placeholder="Search by position or company..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="flex-1 bg-transparent border-none text-white placeholder-gray-400 focus:outline-none"
+                />
+                {searchTerm && (
+                  <button
+                    onClick={() => setSearchTerm('')}
+                    className="text-gray-400 hover:text-white transition-colors"
+                  >
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                )}
               </div>
             </div>
 

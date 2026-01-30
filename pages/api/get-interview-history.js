@@ -6,11 +6,15 @@ export default async function handler(req, res) {
   }
 
   const { userId } = req.query;
+  const userRole = req.query.role || 'candidate';
 
   try {
+    // Determine which column to use based on user role
+    const column = userRole === 'interviewer' ? 'interviewer_id' : 'candidate_id';
+    
     const result = await query(
       `SELECT * FROM scheduled_interviews 
-       WHERE user_id = $1 
+       WHERE ${column} = $1 
        ORDER BY scheduled_at DESC`,
       [userId]
     );

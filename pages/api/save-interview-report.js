@@ -26,9 +26,21 @@ export default async function handler(req, res) {
             durationMs
         } = req.body;
         
-        console.log('💾 Saving report with duration:', duration, 'Questions count:', questionsCount);
-        console.log('📝 Transcript preview:', fullTranscript?.substring(0, 100) || 'N/A');
-        console.log('🤖 AI Detection in evaluation:', evaluation?.aiDetection);
+        console.log('💾 === SAVING INTERVIEW REPORT ===');
+        console.log('📋 Interview ID:', interviewId);
+        console.log('👤 Candidate Info:', { id: candidateId, name: candidateName, email: candidateEmail });
+        console.log('👔 Interviewer Info:', { id: interviewerId, name: interviewerName, email: interviewerEmail });
+        console.log('⏱️ Duration:', duration, 'Questions count:', questionsCount);
+        console.log('📝 Transcript length:', fullTranscript?.length || 0);
+        console.log('🤖 AI Detection:', evaluation?.aiDetection);
+        console.log('================================\n');
+        
+        // Validate candidate info before saving
+        if (!candidateId || !candidateName) {
+            console.warn('⚠️ WARNING: Missing candidate information!');
+            console.warn('candidateId:', candidateId);
+            console.warn('candidateName:', candidateName);
+        }
 
         // Add questionsCount to evaluation data so it persists
         const enhancedEvaluation = {

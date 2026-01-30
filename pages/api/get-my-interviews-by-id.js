@@ -28,6 +28,9 @@ export default async function handler(req, res) {
         si.email,
         si.phone,
         si.scheduled_at,
+        si.position,
+        si.duration,
+        si.interview_type,
         COALESCE(si.status, 'Scheduled') AS status,
         si.meeting_room_id
       FROM scheduled_interviews si
@@ -44,6 +47,9 @@ export default async function handler(req, res) {
       fullName: row.full_name,
       email: row.email,
       phone: row.phone,
+      position: row.position,
+      duration: row.duration,
+      interviewType: row.interview_type,
       scheduledAt: row.scheduled_at
         ? row.scheduled_at.toISOString()
         : null,

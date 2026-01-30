@@ -49,7 +49,7 @@ const ReportsPage = () => {
     }
   };
 
-  const downloadPDF = (report) => {
+  const downloadPDF = async (report) => {
     try {
       console.log('📊 Report data before PDF generation:', {
         questionsCount: report.questions_count,
@@ -57,10 +57,28 @@ const ReportsPage = () => {
         duration: report.duration,
         evaluationData: report.evaluation_data,
         hasAIDetection: !!report.evaluation_data?.aiDetection,
-        questionsCountFromEval: report.evaluation_data?.questionsCount
+        questionsCountFromEval: report.evaluation_data?.questionsCount,
+        candidateId: report.candidate_id,
+        candidateName: report.candidate_name
       });
       
-      const pdf = generateInterviewReportPDF({
+      // Try to get scheduled interview data if candidate info is missing
+      let scheduledInterview = null;
+      if (!report.candidate_id || !report.candidate_name || report.candidate_name === 'Candidate') {
+        try {
+          console.log('⚠️ Candidate info missing, fetching from scheduled interview...');
+          const response = await fetch(`/api/get-interview-by-room?roomId=${report.room_id}`);
+          const data = await response.json();
+          if (data.success) {
+            scheduledInterview = data.interview;
+            console.log('✅ Found scheduled interview:', scheduledInterview);
+          }
+        } catch (error) {
+          console.warn('Could not fetch scheduled interview:', error);
+        }
+      }
+      
+      const pdfBlob = generateInterviewReportPDF({
         roomId: report.room_id,
         questionCategory: report.question_category,
         questionsAsked: report.questions_asked,
@@ -68,15 +86,25 @@ const ReportsPage = () => {
         duration: report.duration,
         interviewerName: report.interviewer_name,
         interviewerEmail: report.interviewer_email,
-        candidateName: report.candidate_name,
-        candidateEmail: report.candidate_email,
+        candidateName: report.candidate_name || scheduledInterview?.candidate_name || scheduledInterview?.full_name || 'N/A',
+        candidateEmail: report.candidate_email || scheduledInterview?.candidate_email || scheduledInterview?.email || 'N/A',
+        candidateId: report.candidate_id || scheduledInterview?.candidate_id || null,
         fullTranscript: report.full_transcript,
         transcribedAnswer: report.full_transcript,
         evaluation: report.evaluation_data
       });
       
       const filename = `Interview_Report_${report.room_id}_${new Date(report.created_at).toLocaleDateString().replace(/\//g, '-')}.pdf`;
-      pdf.save(filename);
+      
+      // Create download link for blob
+      const url = URL.createObjectURL(pdfBlob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
     } catch (error) {
       console.error('Error generating PDF:', error);
       alert('Failed to generate PDF');

@@ -53,20 +53,38 @@ const { data, error, mutate } = useSWR(
   meetingRoomId: i.meeting_room_id,
 }));
 
+  // Auto-update expired interviews when data loads
+  useEffect(() => {
+    if (interviews.length > 0) {
+      updateExpiredInterviews();
+    }
+  }, [data]);
+
 
   // Filter interviews based on active tab
  const filteredInterviews = normalizedInterviews.filter(interview => {
 
     const now = new Date();
     const scheduledDate = interview.scheduledAt ? new Date(interview.scheduledAt) : null;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
     
     switch (activeTab) {
       case 'upcoming':
-        return scheduledDate && scheduledDate > now;
+        // Show only today's upcoming interviews
+        return scheduledDate && 
+               scheduledDate >= today && 
+               scheduledDate < tomorrow && 
+               scheduledDate > now &&
+               interview.status !== 'cancelled' &&
+               interview.status !== 'completed';
       case 'completed':
         return interview.status === 'completed';
       case 'cancelled':
         return interview.status === 'cancelled';
+      case 'all':
       default:
         return true;
     }
@@ -180,9 +198,9 @@ const fetchProfile = async (uid) => {
     if (!dateString) return { date: 'N/A', time: '', full: '' };
     const date = new Date(dateString);
     return {
-      date: date.toLocaleDateString(),
-      time: date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      full: date.toLocaleString(),
+      date: date.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }),
+      time: date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }),
+      full: date.toLocaleString('en-US'),
     };
   };
 
@@ -205,8 +223,49 @@ const fetchProfile = async (uid) => {
     if (status === 'cancelled') return 'Cancelled';
     return 'Pending';
   };
+  
+  const updateExpiredInterviews = async () => {
+    if (!interviews || interviews.length === 0) return;
+    
+    const now = new Date();
+    const expiredInterviews = interviews.filter(interview => {
+      if (!interview.scheduledAt || interview.status === 'completed' || interview.status === 'cancelled' || interview.status === 'pending') return false;
+      const scheduledDate = new Date(interview.scheduledAt);
+      const duration = interview.duration || 60;
+      const endTime = new Date(scheduledDate.getTime() + duration * 60000);
+      return endTime < now;
+    });
+    
+    for (const interview of expiredInterviews) {
+      try {
+        await fetch('/api/update-interview-status', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ 
+            interviewId: interview.id,
+            status: 'pending'
+          })
+        });
+      } catch (error) {
+        console.error('Error updating interview status:', error);
+      }
+    }
+    
+    if (expiredInterviews.length > 0) {
+      mutate(); // Refresh the SWR data
+    }
+  };
+  
+  // Auto-update status every minute
+  useEffect(() => {
+    const interval = setInterval(() => {
+      updateExpiredInterviews();
+    }, 60000);
+    
+    return () => clearInterval(interval);
+  }, [interviews]);
 
-const stats = {
+  const stats = {
   total: normalizedInterviews.length,
   upcoming: normalizedInterviews.filter(
     i => i.scheduledAt && new Date(i.scheduledAt) > new Date()

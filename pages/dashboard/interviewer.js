@@ -1001,7 +1001,7 @@ const updateInterview = async () => {
 
         {/* Candidates Modal (Desktop) */}
         {showCandidatesModal && !isMobile && (
-          <div className="fixed inset-0 z-50 flex items-start justify-center p-4">
+          <div className="fixed inset-0 z-[45] flex items-center justify-center p-4 pt-20">
             {/* Backdrop */}
             <div
               className="absolute inset-0 bg-black/70 backdrop-blur-sm"
@@ -1014,7 +1014,7 @@ const updateInterview = async () => {
               role="dialog"
               aria-modal="true"
               aria-labelledby="candidates-title"
-              className="relative backdrop-blur-xl bg-gray-800/95 rounded-3xl border border-white/10 shadow-2xl w-full max-w-6xl p-6 my-8 overflow-hidden"
+              className="relative backdrop-blur-xl bg-gray-800/95 rounded-3xl border border-white/10 shadow-2xl w-full max-w-5xl p-6 max-h-[85vh] overflow-hidden"
               onClick={(e) => e.stopPropagation()}
             >
              {/* Header Row (icon, title, search, close btn all aligned) */}

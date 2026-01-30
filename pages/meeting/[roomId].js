@@ -55,6 +55,8 @@ export default function MeetingPage() {
   const [position, setPosition] = useState({ x: 0, y: 0 });
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
   const [isVideoHidden, setIsVideoHidden] = useState(false);
+  const [scheduledInterview, setScheduledInterview] = useState(null);
+  const [candidateInfo, setCandidateInfo] = useState(null);
 
   // 🔐 FORCE ROLE LOGIC (PHASE 2)
 useEffect(() => {
@@ -66,6 +68,43 @@ useEffect(() => {
     localStorage.setItem("role", "candidate");
   }
 }, []);
+
+// Fetch scheduled interview details by room ID
+useEffect(() => {
+  if (!roomId) return;
+  
+  const fetchInterviewDetails = async () => {
+    try {
+      console.log('🔍 Fetching interview details for room:', roomId);
+      const response = await fetch(`/api/get-interview-by-room?roomId=${roomId}`);
+      const data = await response.json();
+      
+      console.log('📥 API Response:', data);
+      
+      if (data.success) {
+        setScheduledInterview(data.interview);
+        const candidateData = {
+          id: data.interview.candidate_id,
+          name: data.interview.candidate_name || data.interview.full_name || 'Candidate',
+          email: data.interview.candidate_email || data.interview.email || ''
+        };
+        setCandidateInfo(candidateData);
+        setInterviewId(data.interview.id);
+        console.log('✅ Loaded interview details:', {
+          scheduledId: data.interview.id,
+          candidateInfo: candidateData,
+          roomId: data.interview.meeting_room_id
+        });
+      } else {
+        console.log('⚠️ No scheduled interview found for room:', roomId);
+      }
+    } catch (error) {
+      console.error('❌ Error fetching interview details:', error);
+    }
+  };
+  
+  fetchInterviewDetails();
+}, [roomId]);
 
 
   // Check if mobile on mount and resize
@@ -1109,10 +1148,19 @@ const toggleVideo = () => {
         // Save complete interview report
         const interviewerName = localStorage.getItem('userName') || localStorage.getItem('name') || 'Interviewer';
         const interviewerEmail = localStorage.getItem('userEmail') || localStorage.getItem('email') || '';
-        const candidateName = 'Candidate'; // Get from session if available
-        const candidateEmail = '';
+        
+        // Log current state values for debugging
+        console.log('🔍 Current State Values:');
+        console.log('   candidateInfo:', candidateInfo);
+        console.log('   scheduledInterview:', scheduledInterview);
+        console.log('   interviewId:', interviewId);
+        
+        const candidateName = candidateInfo?.name || scheduledInterview?.candidate_name || scheduledInterview?.full_name || 'Candidate';
+        const candidateEmail = candidateInfo?.email || scheduledInterview?.candidate_email || scheduledInterview?.email || '';
+        const candidateId = candidateInfo?.id || scheduledInterview?.candidate_id || null;
         
         console.log('👤 Interviewer Info:', { name: interviewerName, email: interviewerEmail });
+        console.log('👤 Candidate Info (Final):', { id: candidateId, name: candidateName, email: candidateEmail });
         console.log('⏱️ Interview Start Time:', interviewStartTime ? new Date(interviewStartTime).toISOString() : 'NOT SET');
         console.log('⏱️ Current Time:', new Date().toISOString());
         
@@ -1127,9 +1175,9 @@ const toggleVideo = () => {
         console.log('🤖 AI Detection Data:', plagiarismData.aiDetection || plagiarismData.details?.aiDetection || 'NOT FOUND');
 
         const reportPayload = {
-          interviewId: interviewId || `interview_${Date.now()}`,
+          interviewId: interviewId || scheduledInterview?.id || `interview_${Date.now()}`,
           interviewerId: localStorage.getItem('userId'),
-          candidateId: null,
+          candidateId: candidateId,
           interviewerName,
           candidateName,
           interviewerEmail,

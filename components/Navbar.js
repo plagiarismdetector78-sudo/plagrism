@@ -152,8 +152,8 @@ export default function Navbar() {
           ? 'bg-gray-900/95 backdrop-blur-xl border-b border-purple-500/20 shadow-2xl' 
           : 'bg-gray-900/80 backdrop-blur-lg border-b border-purple-500/10'
       }`}>
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center h-16">
+        <div className="max-w-full mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex justify-between items-center h-16 gap-8">
             {/* Logo */}
             <Link
               href="/"
@@ -171,7 +171,7 @@ export default function Navbar() {
             </Link>
 
             {/* Desktop Navigation */}
-            <div className="hidden lg:flex items-center space-x-1 mx-8 flex-1 justify-center">
+            <div className="hidden lg:flex items-center space-x-1 flex-1 justify-center">
               {navItems.map(({ path, label, icon }) => (
                 <Link
                   key={path}

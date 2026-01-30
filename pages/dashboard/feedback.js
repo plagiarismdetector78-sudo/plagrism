@@ -9,8 +9,10 @@ const FeedbackPage = () => {
   const router = useRouter();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [feedback, setFeedback] = useState([]);
+  const [interviewerFeedback, setInterviewerFeedback] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedFeedback, setSelectedFeedback] = useState(null);
+  const [selectedInterviewerFeedback, setSelectedInterviewerFeedback] = useState(null);
 
   useEffect(() => {
     const savedState = localStorage.getItem('sidebarCollapsed');
@@ -22,6 +24,8 @@ const FeedbackPage = () => {
   const fetchFeedbackData = async () => {
     try {
       const userId = localStorage.getItem('userId');
+      
+      // Fetch AI feedback
       const feedbackRes = await fetch(`/api/get-ai-feedback?userId=${userId}`);
       const feedbackData = await feedbackRes.json();
 
@@ -31,6 +35,14 @@ const FeedbackPage = () => {
           item.feedback_type === 'interview' || item.interview_id
         );
         setFeedback(interviewFeedback);
+      }
+
+      // Fetch interviewer feedback
+      const interviewerRes = await fetch(`/api/get-interviewer-feedback?candidateId=${userId}`);
+      const interviewerData = await interviewerRes.json();
+
+      if (interviewerData.success) {
+        setInterviewerFeedback(interviewerData.feedback);
       }
     } catch (error) {
       console.error('Error fetching feedback data:', error);
@@ -98,11 +110,55 @@ const FeedbackPage = () => {
                 AI <span className="text-transparent bg-clip-text bg-gradient-to-r from-yellow-400 to-pink-500">Feedback</span>
               </h1>
               <p className="text-gray-300 text-sm md:text-base">
-                Get detailed AI-powered insights on your interview performance
+                Get detailed AI-powered insights and interviewer feedback on your performance
               </p>
             </div>
 
-            {/* Feedback List */}
+            {/* Interviewer Feedback Section */}
+            {interviewerFeedback.length > 0 && (
+              <div className="backdrop-blur-xl bg-white/5 rounded-3xl border border-white/10 shadow-2xl p-4 md:p-6 mb-6">
+                <div className="flex items-center justify-between mb-6">
+                  <h2 className="text-xl font-bold text-white">Interviewer Feedback</h2>
+                  <span className="text-gray-400 text-sm">
+                    {interviewerFeedback.length} feedback entries
+                  </span>
+                </div>
+
+                <div className="space-y-4">
+                  {interviewerFeedback.map((item) => (
+                    <div
+                      key={item.id}
+                      className="bg-gradient-to-r from-purple-500/10 to-pink-500/10 border border-purple-500/30 rounded-2xl p-4 md:p-6 hover:border-purple-500/50 transition-all duration-300 cursor-pointer"
+                      onClick={() => setSelectedInterviewerFeedback(item)}
+                    >
+                      <div className="flex items-start justify-between mb-3">
+                        <div className="flex-1">
+                          <h3 className="font-semibold text-white text-lg mb-2">
+                            {item.position}
+                          </h3>
+                          <div className="flex items-center space-x-4 text-sm text-gray-400">
+                            <span>Interview Date: {new Date(item.scheduled_at).toLocaleDateString()}</span>
+                            <span>•</span>
+                            <span className="capitalize">{item.status}</span>
+                          </div>
+                        </div>
+                        <div className="px-3 py-1 rounded-full text-sm font-medium bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                          Interviewer
+                        </div>
+                      </div>
+
+                      <div className="mt-4 bg-white/5 rounded-xl p-4 border border-white/10">
+                        <p className="text-gray-300 line-clamp-3">
+                          {item.interviewer_feedback}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* AI Feedback List */}
             <div className="backdrop-blur-xl bg-white/5 rounded-3xl border border-white/10 shadow-2xl p-4 md:p-6">
               <div className="flex items-center justify-between mb-6">
                 <h2 className="text-xl font-bold text-white">Interview Feedback</h2>
@@ -179,6 +235,77 @@ const FeedbackPage = () => {
             </div>
           </div>
         </div>
+
+        {/* Interviewer Feedback Detail Modal */}
+        {selectedInterviewerFeedback && (
+          <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+            <div className="backdrop-blur-xl bg-gray-800/95 rounded-3xl border border-white/10 shadow-2xl p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+              <div className="flex justify-between items-center mb-6">
+                <h3 className="text-xl font-bold text-white">Interviewer Feedback</h3>
+                <button
+                  onClick={() => setSelectedInterviewerFeedback(null)}
+                  className="text-gray-400 hover:text-white p-1 rounded-lg hover:bg-white/10 transition-colors"
+                >
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+
+              <div className="space-y-6">
+                <div className="bg-white/5 rounded-xl p-4 border border-white/10">
+                  <div className="grid grid-cols-2 gap-4 text-sm">
+                    <div>
+                      <p className="text-gray-400 mb-1">Position</p>
+                      <p className="text-white font-medium">{selectedInterviewerFeedback.position}</p>
+                    </div>
+                    <div>
+                      <p className="text-gray-400 mb-1">Interview Date</p>
+                      <p className="text-white font-medium">
+                        {new Date(selectedInterviewerFeedback.scheduled_at).toLocaleDateString()}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-gray-400 mb-1">Status</p>
+                      <p className="text-white font-medium capitalize">{selectedInterviewerFeedback.status}</p>
+                    </div>
+                    <div>
+                      <p className="text-gray-400 mb-1">Feedback Date</p>
+                      <p className="text-white font-medium">
+                        {new Date(selectedInterviewerFeedback.created_at).toLocaleDateString()}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div>
+                  <h5 className="text-purple-400 font-medium mb-3 flex items-center">
+                    <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                    </svg>
+                    Feedback from Interviewer
+                  </h5>
+                  <div className="bg-gradient-to-r from-purple-500/10 to-pink-500/10 border border-purple-500/30 rounded-xl p-5">
+                    <p className="text-gray-300 leading-relaxed whitespace-pre-wrap">
+                      {selectedInterviewerFeedback.interviewer_feedback}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="bg-blue-500/10 border border-blue-500/30 rounded-xl p-4">
+                  <div className="flex items-start space-x-3">
+                    <svg className="w-5 h-5 text-blue-400 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    <p className="text-blue-300 text-sm">
+                      This feedback was provided by the interviewer who conducted your interview. Use it to understand your performance and identify areas for growth.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Feedback Detail Modal */}
         {selectedFeedback && (
