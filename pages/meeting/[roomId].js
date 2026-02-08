@@ -57,6 +57,13 @@ export default function MeetingPage() {
   const [isVideoHidden, setIsVideoHidden] = useState(false);
   const [scheduledInterview, setScheduledInterview] = useState(null);
   const [candidateInfo, setCandidateInfo] = useState(null);
+  
+  // Sign language detection state
+  const [signLanguageEnabled, setSignLanguageEnabled] = useState(false);
+  const [detectedSigns, setDetectedSigns] = useState([]);
+  const [isProcessingSign, setIsProcessingSign] = useState(false);
+  const signDetectionIntervalRef = useRef(null);
+  const signLanguageCanvasRef = useRef(null);
 
   // 🔐 FORCE ROLE LOGIC (PHASE 2)
 useEffect(() => {
@@ -1014,6 +1021,137 @@ const toggleVideo = () => {
   }
 };
 
+// Toggle sign language detection
+const toggleSignLanguage = () => {
+  if (!signLanguageEnabled) {
+    // Start sign language detection
+    setSignLanguageEnabled(true);
+    startSignLanguageDetection();
+  } else {
+    // Stop sign language detection
+    setSignLanguageEnabled(false);
+    stopSignLanguageDetection();
+  }
+};
+
+// Start sign language detection
+const startSignLanguageDetection = () => {
+  console.log('🤟 Starting sign language detection...');
+  
+  // Clear previous detections
+  setDetectedSigns([]);
+  
+  // Process video frames every 2 seconds
+  signDetectionIntervalRef.current = setInterval(async () => {
+    await processSignLanguageFrame();
+  }, 2000);
+};
+
+// Stop sign language detection
+const stopSignLanguageDetection = () => {
+  console.log('🛑 Stopping sign language detection...');
+  
+  if (signDetectionIntervalRef.current) {
+    clearInterval(signDetectionIntervalRef.current);
+    signDetectionIntervalRef.current = null;
+  }
+  
+  setIsProcessingSign(false);
+};
+
+// Process video frame for sign language detection
+const processSignLanguageFrame = async () => {
+  if (isProcessingSign || !remoteVideoRef.current) return;
+  
+  try {
+    setIsProcessingSign(true);
+    
+    // Create canvas if not exists
+    if (!signLanguageCanvasRef.current) {
+      signLanguageCanvasRef.current = document.createElement('canvas');
+      signLanguageCanvasRef.current.width = 224;
+      signLanguageCanvasRef.current.height = 224;
+    }
+    
+    const canvas = signLanguageCanvasRef.current;
+    const ctx = canvas.getContext('2d');
+    const video = remoteVideoRef.current;
+    
+    // Draw current video frame to canvas
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    
+    // Convert canvas to blob
+    canvas.toBlob(async (blob) => {
+      if (!blob) return;
+      
+      // Convert blob to base64
+      const reader = new FileReader();
+      reader.readAsDataURL(blob);
+      reader.onloadend = async () => {
+        const base64data = reader.result;
+        
+        // Send to API for detection
+        try {
+          const response = await fetch('/api/detect-sign-language', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ image: base64data })
+          });
+          
+          const data = await response.json();
+          
+          if (data.success && data.sign) {
+            console.log('🤟 Detected sign:', data.sign, 'Confidence:', data.confidence);
+            
+            // Add detected sign to list
+            const newSign = {
+              sign: data.sign,
+              confidence: data.confidence,
+              timestamp: Date.now()
+            };
+            
+            setDetectedSigns(prev => [...prev, newSign]);
+            
+            // Add to transcript
+            const signText = data.sign === 'space' ? ' ' : data.sign;
+            const transcriptUpdate = `${signText}`;
+            
+            setFullTranscript(prev => prev + transcriptUpdate);
+            setCurrentQuestionTranscript(prev => prev + transcriptUpdate);
+            
+            // Broadcast to other participants
+            if (socket) {
+              socket.emit('sign-detected', {
+                roomId,
+                sign: data.sign,
+                confidence: data.confidence
+              });
+            }
+          } else if (data.loading) {
+            console.log('⏳ Model loading, estimated time:', data.estimatedTime, 'seconds');
+          }
+        } catch (error) {
+          console.error('Error detecting sign language:', error);
+        }
+      };
+    }, 'image/jpeg', 0.8);
+    
+  } catch (error) {
+    console.error('Error processing sign language frame:', error);
+  } finally {
+    setIsProcessingSign(false);
+  }
+};
+
+// Cleanup sign language detection on unmount
+useEffect(() => {
+  return () => {
+    if (signDetectionIntervalRef.current) {
+      clearInterval(signDetectionIntervalRef.current);
+    }
+  };
+}, []);
+
 
 
 
@@ -1481,7 +1619,13 @@ const toggleVideo = () => {
                       <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span>
                     </div>
                   )}
-                  <i className="fas fa-microphone-lines text-purple-400 text-lg"></i>
+                  {signLanguageEnabled && (
+                    <div className="relative flex h-3 w-3">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-3 w-3 bg-blue-500"></span>
+                    </div>
+                  )}
+                  <i className={`fas ${signLanguageEnabled ? 'fa-hands' : 'fa-microphone-lines'} text-${signLanguageEnabled ? 'blue' : 'purple'}-400 text-lg`}></i>
                   <h3 className="text-white font-bold text-lg">Live Transcript</h3>
                 </div>
                 <button
@@ -1491,7 +1635,17 @@ const toggleVideo = () => {
                   <i className="fas fa-times text-lg"></i>
                 </button>
               </div>
-              <p className="text-gray-400 text-xs mt-2">Real-time speech transcription</p>
+              <div className="flex items-center justify-between mt-2">
+                <p className="text-gray-400 text-xs">
+                  {signLanguageEnabled ? 'Sign language detection active' : 'Real-time speech transcription'}
+                </p>
+                {signLanguageEnabled && isProcessingSign && (
+                  <span className="text-xs text-blue-400 animate-pulse">
+                    <i className="fas fa-spinner fa-spin mr-1"></i>
+                    Processing...
+                  </span>
+                )}
+              </div>
             </div>
             
             {/* Transcript Content */}
@@ -1514,6 +1668,37 @@ const toggleVideo = () => {
                 </div>
               )}
             </div>
+            
+            {/* Detected Signs Display (when sign language is enabled) */}
+            {signLanguageEnabled && detectedSigns.length > 0 && (
+              <div className="bg-blue-900/20 px-6 py-4 border-t border-blue-500/30">
+                <div className="flex items-center justify-between mb-3">
+                  <h4 className="text-blue-400 text-sm font-semibold">
+                    <i className="fas fa-hands mr-2"></i>
+                    Detected Signs
+                  </h4>
+                  <button
+                    onClick={() => setDetectedSigns([])}
+                    className="text-xs text-gray-400 hover:text-white"
+                  >
+                    Clear
+                  </button>
+                </div>
+                <div className="flex flex-wrap gap-2 max-h-24 overflow-y-auto scrollbar-thin scrollbar-thumb-blue-500/50">
+                  {detectedSigns.slice(-10).map((detection, idx) => (
+                    <div
+                      key={idx}
+                      className="bg-blue-500/20 border border-blue-500/30 rounded-lg px-3 py-1.5 flex items-center space-x-2"
+                    >
+                      <span className="text-white font-bold text-lg">{detection.sign}</span>
+                      <span className="text-blue-300 text-xs">
+                        {Math.round(detection.confidence * 100)}%
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
             
             {/* Transcript Footer - Stats */}
             <div className="bg-black/30 px-6 py-4 border-t border-white/10">
@@ -1636,6 +1821,18 @@ const toggleVideo = () => {
                     title="Toggle Transcript"
                   >
                     <i className="fas fa-comment-alt text-white"></i>
+                  </button>
+
+                  {/* Sign Language Detection Toggle */}
+                  <button
+                    onClick={toggleSignLanguage}
+                    className={`p-2.5 rounded-lg transition-all hover:scale-105 ${signLanguageEnabled
+                      ? 'bg-blue-600 hover:bg-blue-500 animate-pulse'
+                      : 'bg-gray-700/80 hover:bg-gray-600/80'
+                      }`}
+                    title={signLanguageEnabled ? 'Stop Sign Language Detection' : 'Start Sign Language Detection'}
+                  >
+                    <i className="fas fa-hands text-white"></i>
                   </button>
 
                   {/* Generate Report */}
