@@ -104,10 +104,6 @@ const [scheduleInterviewType, setScheduleInterviewType] = useState("technical");
   };
 
   const handleOpenCandidates = async () => {
-  // Collapse/hide sidebar when showing candidates so it doesn't cut off the view
-  setSidebarCollapsed(true);
-  localStorage.setItem("sidebarCollapsed", "true");
-
   // Open modal (desktop) or tab (mobile)
   setShowCandidatesModal(true);
   setSearchQuery("");
