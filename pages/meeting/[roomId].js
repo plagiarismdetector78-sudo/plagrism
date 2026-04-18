@@ -229,6 +229,23 @@ export default function MeetingPage() {
     });
   };
 
+  const encodeTaggedTranscript = (qid, text) => {
+    const clean = String(text || "").trim();
+    if (!clean) return "";
+    if (qid == null || qid === "") return clean;
+    return `[[qid=${String(qid)}]] ${clean}`;
+  };
+
+  const decodeTaggedTranscript = (raw) => {
+    const input = String(raw || "");
+    const m = input.match(/^\s*\[\[qid=([^\]]+)\]\]\s*/i);
+    if (!m) return { questionId: null, text: input.trim() };
+    const qid = m[1];
+    const text = input.slice(m[0].length).trim();
+    const normalizedId = qid && qid !== "null" && qid !== "undefined" ? qid : null;
+    return { questionId: normalizedId, text };
+  };
+
   const trackAskedQuestion = (question) => {
     const questionId = getQuestionId(question);
     if (!questionId) return;
@@ -792,11 +809,15 @@ socket.on("ready-to-call", async () => {
       }
     });
     socket.on("transcript-update", ({ transcript: newText, timestamp, questionId, questionText }) => {
-      console.log("📥 Received transcript update:", newText);
+      const decoded = decodeTaggedTranscript(newText);
+      const decodedText = decoded.text;
+      const decodedQuestionId = decoded.questionId;
+
+      console.log("📥 Received transcript update:", decodedText);
       console.log("👤 User role:", userRole);
       // Update BOTH full transcript and current question transcript
       setFullTranscript(prev => {
-        const updated = prev ? prev + " " + newText : newText;
+        const updated = prev ? prev + " " + decodedText : decodedText;
         console.log("📝 Full transcript length:", updated.length);
         return updated;
       });
@@ -804,29 +825,30 @@ socket.on("ready-to-call", async () => {
       const activeQuestionId = getQuestionId(activeQuestion);
       const activeQuestionText = getQuestionText(activeQuestion);
 
-      const effectiveQuestionId = questionId ?? activeQuestionId ?? null;
+      const effectiveQuestionId = decodedQuestionId ?? questionId ?? activeQuestionId ?? null;
       const effectiveQuestionText = questionText || activeQuestionText || "";
 
       logInterviewQA("transcript-update:received", {
         role: userRole,
         rawQuestionId: questionId ?? null,
         rawQuestionTextPreview: (questionText || "").slice(0, 60),
+        decodedQuestionId,
         effectiveQuestionId,
         effectiveQuestionTextPreview: (effectiveQuestionText || "").slice(0, 60),
-        chunkPreview: (newText || "").slice(0, 120),
+        chunkPreview: (decodedText || "").slice(0, 120),
         timestamp,
         recorder: getRecorderDebugState(),
       });
 
       if (effectiveQuestionId) {
-        appendChunkToQuestionAnswer(effectiveQuestionId, effectiveQuestionText, newText);
+        appendChunkToQuestionAnswer(effectiveQuestionId, effectiveQuestionText, decodedText);
       }
 
       setCurrentQuestionTranscript((prev) => {
         if (effectiveQuestionId && String(effectiveQuestionId) !== String(activeQuestionId)) {
           return prev;
         }
-        const merged = prev ? `${prev.trim()} ${newText}`.trim() : newText.trim();
+        const merged = prev ? `${prev.trim()} ${decodedText}`.trim() : decodedText.trim();
         console.log("📝 Current question transcript:", merged.substring(0, 50) + "...");
         return merged;
       });
@@ -1243,8 +1265,9 @@ const toggleTranscription = async () => {
           });
           socket.emit("transcript-update", {
             roomId,
-            transcript: newTranscript,
+            transcript: encodeTaggedTranscript(chunkQuestionId, newTranscript),
             timestamp: Date.now(),
+            // Some signaling servers drop extra fields; transcript is always forwarded.
             questionId: chunkQuestionId,
             questionText: chunkQuestionText,
           });
