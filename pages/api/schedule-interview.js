@@ -50,6 +50,14 @@ export default async function handler(req, res) {
 
     const { full_name, email, phone } = cand.rows[0];
 
+    const normalizedScheduledAt = new Date(scheduledAt);
+    if (Number.isNaN(normalizedScheduledAt.getTime())) {
+      return res.status(400).json({
+        success: false,
+        error: "Invalid scheduledAt value",
+      });
+    }
+
     // Generate room ID if required
     let finalRoomId = meetingRoomId;
     if (createRoom || !meetingRoomId) {
@@ -70,7 +78,7 @@ export default async function handler(req, res) {
         full_name || "Unknown",
         email || "",
         phone || "",
-        scheduledAt,
+        normalizedScheduledAt.toISOString(),
         finalRoomId,
         duration || 60,
         interviewType || "technical",

@@ -99,7 +99,8 @@ const ScheduleInterviewPage = () => {
         body: JSON.stringify({
           candidateId: resolveCandidateId(selectedCandidate),
           interviewerId: localStorage.getItem("userId"),
-          scheduledAt: scheduleData.scheduledAt, // Keep as-is, let backend handle timezone
+          // Send explicit UTC ISO to avoid timezone drift.
+          scheduledAt: scheduledDate.toISOString(),
           duration: scheduleData.duration,
           interviewType: scheduleData.interviewType,
           position: scheduleData.position,

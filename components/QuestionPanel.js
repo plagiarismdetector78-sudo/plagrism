@@ -285,13 +285,18 @@ export default function QuestionPanel({
                                                         { l: 'Understanding', v: plagiarismDetails?.details?.scores?.understanding || plagiarismDetails?.breakdown?.conceptCoverage, c: 'text-emerald-400', bg: 'from-emerald-500/20 to-emerald-600/20', border: 'border-emerald-500/30', i: 'fa-brain' },
                                                         { l: 'Clarity', v: plagiarismDetails?.details?.scores?.clarity || 0, c: 'text-amber-400', bg: 'from-amber-500/20 to-amber-600/20', border: 'border-amber-500/30', i: 'fa-star' }
                                                     ].map((stat, i) => (
+                                                        (() => {
+                                                            const safeValue = Number.isFinite(stat.v) ? stat.v : 0;
+                                                            return (
                                                         <div key={i} className={`bg-gradient-to-br ${stat.bg} rounded-xl p-3 text-center border ${stat.border} hover:border-opacity-50 transition-all duration-300 group hover:scale-105 shadow-lg`}>
                                                             <div className={`w-8 h-8 rounded-lg bg-black/20 flex items-center justify-center mx-auto mb-2 group-hover:scale-110 transition-transform`}>
                                                                 <i className={`fas ${stat.i} ${stat.c} text-xs`}></i>
                                                             </div>
-                                                            <div className={`text-lg font-bold ${stat.c} mb-1`}>{Math.round(stat.v)}%</div>
+                                                            <div className={`text-lg font-bold ${stat.c} mb-1`}>{Math.round(safeValue)}%</div>
                                                             <div className="text-[8px] text-gray-400 uppercase tracking-wider font-semibold">{stat.l}</div>
                                                         </div>
+                                                            );
+                                                        })()
                                                     ))}
                                                 </div>
 

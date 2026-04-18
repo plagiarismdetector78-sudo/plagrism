@@ -33,6 +33,7 @@ export default function MeetingPage() {
   const [fullTranscript, setFullTranscript] = useState(""); // Entire interview transcript (for display)
   const [currentQuestionTranscript, setCurrentQuestionTranscript] = useState(""); // Transcript for CURRENT question only
   const [questionAnswers, setQuestionAnswers] = useState([]); // Store all Q&A pairs: [{questionId, questionText, answer}]
+  const [questionTranscriptMap, setQuestionTranscriptMap] = useState({}); // { [questionId]: transcript }
   const [askedQuestions, setAskedQuestions] = useState([]); // Track all displayed questions in this interview
   const [interviewStartTime, setInterviewStartTime] = useState(null); // Track when interview started
   const [questionCount, setQuestionCount] = useState(1); // Track total questions asked (start at 1)
@@ -77,8 +78,13 @@ export default function MeetingPage() {
 
   const appendChunkToQuestionAnswer = (questionId, questionText, chunkText) => {
     if (!questionId || !chunkText?.trim()) return;
+    const key = String(questionId);
+    setQuestionTranscriptMap((prev) => ({
+      ...prev,
+      [key]: `${prev[key] || ""} ${chunkText.trim()}`.trim(),
+    }));
     setQuestionAnswers((prev) => {
-      const existing = prev.find((qa) => String(qa.questionId) === String(questionId));
+      const existing = prev.find((qa) => String(qa.questionId) === key);
       if (!existing) {
         return [
           ...prev,
@@ -91,7 +97,7 @@ export default function MeetingPage() {
       }
 
       return prev.map((qa) =>
-        String(qa.questionId) === String(questionId)
+        String(qa.questionId) === key
           ? {
               ...qa,
               questionText: qa.questionText || questionText || "",
@@ -112,6 +118,16 @@ export default function MeetingPage() {
       }
       return [...prev, { questionId, questionText }];
     });
+  };
+
+  const getAskedQuestionList = () => {
+    if (askedQuestions.length > 0) return askedQuestions;
+    return questions
+      .map((q) => ({
+        questionId: getQuestionId(q),
+        questionText: getQuestionText(q),
+      }))
+      .filter((q) => q.questionId);
   };
   
   // Sign language detection state
@@ -573,6 +589,10 @@ socket.on("ready-to-call", async () => {
       
       setCurrentQuestion(question);
       trackAskedQuestion(question);
+      const newQuestionId = getQuestionId(question);
+      setCurrentQuestionTranscript(
+        newQuestionId ? (questionTranscriptMap[String(newQuestionId)] || "") : ""
+      );
       setPlagiarismScore(null);
       setPlagiarismDetails(null);
     });
@@ -618,17 +638,19 @@ socket.on("ready-to-call", async () => {
         appendChunkToQuestionAnswer(questionId, questionText, newText);
       }
 
-      const activeQuestionId = getQuestionId(currentQuestion);
+      const activeQuestion = activeQuestionRef.current;
+      const activeQuestionId = getQuestionId(activeQuestion);
       if (questionId && String(questionId) !== String(activeQuestionId)) {
         // Chunk belongs to a previous question; don't pollute active question transcript
         return;
       }
 
-      setCurrentQuestionTranscript(prev => {
-        const updated = prev ? prev + " " + newText : newText;
-        console.log("📝 Current question transcript:", updated.substring(0, 50) + "...");
-        return updated;
-      });
+      const key = String(questionId || activeQuestionId || "");
+      const updated = key
+        ? `${questionTranscriptMap[key] || ""} ${newText}`.trim()
+        : `${currentQuestionTranscript || ""} ${newText}`.trim();
+      console.log("📝 Current question transcript:", updated.substring(0, 50) + "...");
+      setCurrentQuestionTranscript(updated);
     });
 
 
@@ -735,12 +757,14 @@ const startTest = async () => {
   if (!loadedQuestions.length) return;
 
   const firstQuestion = loadedQuestions[0];
+  const firstQuestionId = getQuestionId(firstQuestion);
   setCurrentQuestion(firstQuestion);
   setQuestionCount(1);
   setQuestionAnswers([]);
+  setQuestionTranscriptMap({});
   setAskedQuestions([]);
   trackAskedQuestion(firstQuestion);
-  setCurrentQuestionTranscript("");
+  setCurrentQuestionTranscript(firstQuestionId ? (questionTranscriptMap[String(firstQuestionId)] || "") : "");
 
 
   // 🔥 SEND TO CANDIDATE
@@ -1263,13 +1287,16 @@ useEffect(() => {
     if (currentQuestionIndex < questions.length - 1) {
       const currentQuestionId = getQuestionId(currentQuestion);
       // Save current question's answer before switching (interviewer side)
-      if (currentQuestionId && currentQuestionTranscript.trim()) {
+      const currentAnswer = currentQuestionId
+        ? (questionTranscriptMap[String(currentQuestionId)] || currentQuestionTranscript || "").trim()
+        : "";
+      if (currentQuestionId && currentAnswer) {
         setQuestionAnswers(prev => [
           ...prev.filter(qa => qa.questionId !== currentQuestionId),
           {
             questionId: currentQuestionId,
             questionText: getQuestionText(currentQuestion),
-            answer: currentQuestionTranscript.trim()
+            answer: currentAnswer
           }
         ]);
       }
@@ -1277,7 +1304,9 @@ useEffect(() => {
       const newIndex = currentQuestionIndex + 1;
       setCurrentQuestionIndex(newIndex);
       setCurrentQuestion(questions[newIndex]);
-      setCurrentQuestionTranscript(""); // Clear for new question
+      trackAskedQuestion(questions[newIndex]);
+      const nextQuestionId = getQuestionId(questions[newIndex]);
+      setCurrentQuestionTranscript(nextQuestionId ? (questionTranscriptMap[String(nextQuestionId)] || "") : "");
       setPlagiarismScore(null);
       setPlagiarismDetails(null);
       
@@ -1309,13 +1338,16 @@ useEffect(() => {
     if (currentQuestionIndex > 0) {
       const currentQuestionId = getQuestionId(currentQuestion);
       // Save current question's answer before switching (interviewer side)
-      if (currentQuestionId && currentQuestionTranscript.trim()) {
+      const currentAnswer = currentQuestionId
+        ? (questionTranscriptMap[String(currentQuestionId)] || currentQuestionTranscript || "").trim()
+        : "";
+      if (currentQuestionId && currentAnswer) {
         setQuestionAnswers(prev => [
           ...prev.filter(qa => qa.questionId !== currentQuestionId),
           {
             questionId: currentQuestionId,
             questionText: getQuestionText(currentQuestion),
-            answer: currentQuestionTranscript.trim()
+            answer: currentAnswer
           }
         ]);
       }
@@ -1323,7 +1355,9 @@ useEffect(() => {
       const newIndex = currentQuestionIndex - 1;
       setCurrentQuestionIndex(newIndex);
       setCurrentQuestion(questions[newIndex]);
-      setCurrentQuestionTranscript(""); // Clear for new question
+      trackAskedQuestion(questions[newIndex]);
+      const nextQuestionId = getQuestionId(questions[newIndex]);
+      setCurrentQuestionTranscript(nextQuestionId ? (questionTranscriptMap[String(nextQuestionId)] || "") : "");
       setPlagiarismScore(null);
       setPlagiarismDetails(null);
 
@@ -1367,19 +1401,15 @@ useEffect(() => {
       }
     });
 
-    const baseQuestions = askedQuestions.length
-      ? askedQuestions
-      : questions.map((q) => ({
-          questionId: getQuestionId(q),
-          questionText: getQuestionText(q),
-        })).filter((q) => q.questionId);
+    const baseQuestions = getAskedQuestionList();
 
     const merged = baseQuestions.map((q) => {
       const answerEntry = byQuestion.get(q.questionId);
+      const mapAnswer = questionTranscriptMap[String(q.questionId)] || "";
       return {
         questionId: q.questionId,
         questionText: q.questionText || answerEntry?.questionText || "",
-        answer: answerEntry?.answer || "",
+        answer: (mapAnswer || answerEntry?.answer || "").trim(),
       };
     });
 
@@ -1469,7 +1499,10 @@ useEffect(() => {
       console.log("📝 Generating question-wise report for", answersByQuestion.length, "answers");
       const questionEvaluations = await evaluateQuestionWiseAnswers(answersByQuestion);
 
-      const totalScore = questionEvaluations.reduce((sum, item) => sum + (item.score || 0), 0);
+      const totalScore = questionEvaluations.reduce(
+        (sum, item) => sum + (Number.isFinite(item.score) ? item.score : 0),
+        0
+      );
       const overallScore = questionEvaluations.length
         ? Math.round(totalScore / questionEvaluations.length)
         : 0;
@@ -1477,7 +1510,7 @@ useEffect(() => {
       const averageMetric = (metric) => {
         const values = questionEvaluations
           .map((q) => q.details?.scores?.[metric])
-          .filter((value) => typeof value === "number");
+          .filter((value) => Number.isFinite(value));
         if (!values.length) return 0;
         return Math.round(values.reduce((a, b) => a + b, 0) / values.length);
       };
@@ -1559,7 +1592,7 @@ useEffect(() => {
           questionId: item.questionId,
           questionText: item.questionText,
           answer: item.answer,
-          score: item.score || 0,
+          score: Number.isFinite(item.score) ? item.score : 0,
           interpretation: item.interpretation || "",
           strengths: item.details?.strengths || [],
           weaknesses: item.details?.weaknesses || [],

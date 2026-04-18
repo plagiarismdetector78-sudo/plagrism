@@ -355,8 +355,10 @@ const openEditModal = (interview) => {
   const iso = interview.scheduledAt ? new Date(interview.scheduledAt) : null;
 
   if (iso) {
-    setEditDate(iso.toISOString().split("T")[0]);
-    setEditTime(iso.toISOString().split("T")[1].substring(0, 5));
+    const localDate = `${iso.getFullYear()}-${String(iso.getMonth() + 1).padStart(2, "0")}-${String(iso.getDate()).padStart(2, "0")}`;
+    const localTime = `${String(iso.getHours()).padStart(2, "0")}:${String(iso.getMinutes()).padStart(2, "0")}`;
+    setEditDate(localDate);
+    setEditTime(localTime);
   }
 
   setEditPosition(interview.position || "Software Engineering");
