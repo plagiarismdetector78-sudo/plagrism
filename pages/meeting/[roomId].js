@@ -17,6 +17,11 @@ export default function MeetingPage() {
   const mediaRecorderRef = useRef(null);
   const transcriptionIntervalRef = useRef(null);
   const activeQuestionRef = useRef(null);
+  const chunkStopTimerRef = useRef(null);
+  /** Question id/text for the audio segment currently being recorded (set at segment start). */
+  const recordingChunkQuestionRef = useRef({ id: null, text: "" });
+  /** Candidate: next segment should tag this question (from socket) so we do not race activeQuestionRef updates. */
+  const pendingRecordingQuestionRef = useRef(null);
 
   const audioChunksRef = useRef([]);
   const localVideoContainerRef = useRef(null);
@@ -64,7 +69,8 @@ export default function MeetingPage() {
   const lockedCategory = FIXED_CATEGORIES.includes(scheduledInterview?.position)
     ? scheduledInterview.position
     : null;
-  const RECORDING_CHUNK_MS = 4000;
+  /** Longer chunks reduce mid-word cuts; question switches flush early via recorder.stop(). */
+  const RECORDING_CHUNK_MS = 12000;
 
   const getQuestionId = (question) =>
     question?.id ?? question?.Id ?? question?.questionId ?? question?.questionid ?? null;
@@ -75,6 +81,49 @@ export default function MeetingPage() {
   useEffect(() => {
     activeQuestionRef.current = currentQuestion;
   }, [currentQuestion]);
+
+  const clearChunkStopTimer = () => {
+    if (chunkStopTimerRef.current) {
+      clearTimeout(chunkStopTimerRef.current);
+      chunkStopTimerRef.current = null;
+    }
+  };
+
+  const applyPendingOrActiveRecordingQuestion = () => {
+    const pending = pendingRecordingQuestionRef.current;
+    if (pending?.id) {
+      recordingChunkQuestionRef.current = {
+        id: pending.id,
+        text: pending.text || "",
+      };
+      pendingRecordingQuestionRef.current = null;
+    } else {
+      const q = activeQuestionRef.current;
+      recordingChunkQuestionRef.current = {
+        id: getQuestionId(q),
+        text: getQuestionText(q),
+      };
+    }
+  };
+
+  const scheduleChunkStop = (rec) => {
+    clearChunkStopTimer();
+    chunkStopTimerRef.current = setTimeout(() => {
+      if (rec && rec.state === "recording") {
+        rec.stop();
+      }
+      chunkStopTimerRef.current = null;
+    }, RECORDING_CHUNK_MS);
+  };
+
+  /** End current WebM segment early so transcription attributes to the question active when the segment started. */
+  const flushRecordingChunk = () => {
+    clearChunkStopTimer();
+    const r = mediaRecorderRef.current;
+    if (r && r.state === "recording") {
+      r.stop();
+    }
+  };
 
   const appendChunkToQuestionAnswer = (questionId, questionText, chunkText) => {
     if (!questionId || !chunkText?.trim()) return;
@@ -550,6 +599,16 @@ socket.on("ready-to-call", async () => {
     socket.on("question-asked", ({ question, previousQuestionId, previousQuestionText }) => {
       const normalizedQuestionId = getQuestionId(question);
       console.log("📬 Question-asked event received:", { questionId: normalizedQuestionId, previousQuestionId });
+
+      if (userRole === "candidate") {
+        if (normalizedQuestionId) {
+          pendingRecordingQuestionRef.current = {
+            id: normalizedQuestionId,
+            text: getQuestionText(question),
+          };
+        }
+        flushRecordingChunk();
+      }
       
       // Set start time on first question
       setInterviewStartTime(prev => {
@@ -640,17 +699,15 @@ socket.on("ready-to-call", async () => {
 
       const activeQuestion = activeQuestionRef.current;
       const activeQuestionId = getQuestionId(activeQuestion);
-      if (questionId && String(questionId) !== String(activeQuestionId)) {
-        // Chunk belongs to a previous question; don't pollute active question transcript
-        return;
-      }
 
-      const key = String(questionId || activeQuestionId || "");
-      const updated = key
-        ? `${questionTranscriptMap[key] || ""} ${newText}`.trim()
-        : `${currentQuestionTranscript || ""} ${newText}`.trim();
-      console.log("📝 Current question transcript:", updated.substring(0, 50) + "...");
-      setCurrentQuestionTranscript(updated);
+      setCurrentQuestionTranscript((prev) => {
+        if (questionId && String(questionId) !== String(activeQuestionId)) {
+          return prev;
+        }
+        const merged = prev ? `${prev.trim()} ${newText}`.trim() : newText.trim();
+        console.log("📝 Current question transcript:", merged.substring(0, 50) + "...");
+        return merged;
+      });
     });
 
 
@@ -778,11 +835,12 @@ const startTest = async () => {
   const cleanupMedia = () => {
     console.log("Cleaning up media resources...");
 
-    // Stop transcription if active
+    clearChunkStopTimer();
     if (mediaRecorderRef.current?.state === "recording") {
-  mediaRecorderRef.current.stop();
-}
-setTranscriptionEnabled(false);
+      mediaRecorderRef.current.stop();
+    }
+    mediaRecorderRef.current = null;
+    setTranscriptionEnabled(false);
 
 
     // Stop local stream tracks
@@ -932,6 +990,7 @@ const toggleTranscription = async () => {
 
   // 🛑 STOP transcription
   if (mediaRecorderRef.current) {
+    clearChunkStopTimer();
     mediaRecorderRef.current.stop();
     mediaRecorderRef.current = null;
     setTranscriptionEnabled(false);
@@ -956,6 +1015,7 @@ const toggleTranscription = async () => {
   const recorder = new MediaRecorder(audioStream, { mimeType });
   mediaRecorderRef.current = recorder;
   setTranscriptionEnabled(true);
+  applyPendingOrActiveRecordingQuestion();
 
   recorder.ondataavailable = async (e) => {
     if (!e.data || e.data.size === 0) {
@@ -964,7 +1024,12 @@ const toggleTranscription = async () => {
     }
 
     console.log("🎤 Audio chunk received, size:", e.data.size, "bytes");
-    
+
+    const chunkTag = {
+      id: recordingChunkQuestionRef.current?.id,
+      text: recordingChunkQuestionRef.current?.text || "",
+    };
+
     const formData = new FormData();
     formData.append("file", e.data, "chunk.webm");
 
@@ -986,22 +1051,28 @@ const toggleTranscription = async () => {
       } else if (data.text && data.text.trim().length > 0) {
         console.log("📝 Transcript:", data.text);
         const newTranscript = data.text.trim();
-        
-        // Update BOTH full transcript and current question transcript (for candidate)
-        setFullTranscript((prev) => prev ? prev + " " + newTranscript : newTranscript);
-        setCurrentQuestionTranscript((prev) => prev ? prev + " " + newTranscript : newTranscript);
-        
-        // 🔥 SEND TRANSCRIPT TO INTERVIEWER VIA SOCKET (real-time)
-        if (socket && roomId && newTranscript.length > 2) {
-          const activeQuestion = activeQuestionRef.current;
-          const activeQuestionId = getQuestionId(activeQuestion);
-          const activeQuestionText = getQuestionText(activeQuestion);
+        const chunkQuestionId = chunkTag.id;
+        const chunkQuestionText = chunkTag.text;
+
+        setFullTranscript((prev) => (prev ? `${prev} ${newTranscript}` : newTranscript).trim());
+        if (chunkQuestionId) {
+          appendChunkToQuestionAnswer(chunkQuestionId, chunkQuestionText, newTranscript);
+        }
+        setCurrentQuestionTranscript((prev) => {
+          const activeId = getQuestionId(activeQuestionRef.current);
+          if (chunkQuestionId && String(chunkQuestionId) !== String(activeId)) {
+            return prev;
+          }
+          return prev ? `${prev.trim()} ${newTranscript}`.trim() : newTranscript;
+        });
+
+        if (socket && roomId && newTranscript.length > 2 && chunkQuestionId) {
           socket.emit("transcript-update", {
             roomId,
             transcript: newTranscript,
             timestamp: Date.now(),
-            questionId: activeQuestionId,
-            questionText: activeQuestionText
+            questionId: chunkQuestionId,
+            questionText: chunkQuestionText,
           });
           console.log("📤 Sent transcript to interviewer:", newTranscript);
         }
@@ -1040,15 +1111,9 @@ const toggleTranscription = async () => {
           
           try {
             newRecorder.start();
-            console.log("✅ Recorder restarted, will record for 10 seconds");
-            
-            // Stop after a shorter window so answers are captured per question reliably
-            setTimeout(() => {
-              if (newRecorder.state === "recording") {
-                newRecorder.stop();
-                console.log("⏹ Stopping recorder after chunk window");
-              }
-            }, RECORDING_CHUNK_MS);
+            applyPendingOrActiveRecordingQuestion();
+            scheduleChunkStop(newRecorder);
+            console.log("✅ Recorder restarted for next chunk");
           } catch (err) {
             console.error("❌ Failed to restart recorder:", err);
           }
@@ -1063,16 +1128,12 @@ const toggleTranscription = async () => {
 
   try {
     recorder.start();
+    scheduleChunkStop(recorder);
     console.log("🎙 Recorder started:", mimeType);
-    
-    // Stop after a shorter window so short answers are not lost
-    setTimeout(() => {
-      if (recorder.state === "recording") {
-        recorder.stop();
-        console.log("⏹ Stopping recorder after chunk window");
-      }
-    }, RECORDING_CHUNK_MS);
   } catch (err) {
+    clearChunkStopTimer();
+    mediaRecorderRef.current = null;
+    setTranscriptionEnabled(false);
     console.error("❌ MediaRecorder start failed", err);
   }
 };
