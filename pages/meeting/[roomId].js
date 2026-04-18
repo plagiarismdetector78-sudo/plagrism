@@ -243,6 +243,11 @@ export default function MeetingPage() {
 
   const getAskedQuestionList = () => {
     if (askedQuestions.length > 0) return askedQuestions;
+    const activeId = getQuestionId(currentQuestion);
+    if (activeId) {
+      return [{ questionId: activeId, questionText: getQuestionText(currentQuestion) }];
+    }
+    // Fallback (should be rare): only use loaded questions if we truly have no active question.
     return questions
       .map((q) => ({
         questionId: getQuestionId(q),
