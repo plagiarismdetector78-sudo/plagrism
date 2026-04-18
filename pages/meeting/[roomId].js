@@ -32,6 +32,7 @@ export default function MeetingPage() {
   const [fullTranscript, setFullTranscript] = useState(""); // Entire interview transcript (for display)
   const [currentQuestionTranscript, setCurrentQuestionTranscript] = useState(""); // Transcript for CURRENT question only
   const [questionAnswers, setQuestionAnswers] = useState([]); // Store all Q&A pairs: [{questionId, questionText, answer}]
+  const [askedQuestions, setAskedQuestions] = useState([]); // Track all displayed questions in this interview
   const [interviewStartTime, setInterviewStartTime] = useState(null); // Track when interview started
   const [questionCount, setQuestionCount] = useState(1); // Track total questions asked (start at 1)
   const [transcriptionEnabled, setTranscriptionEnabled] = useState(false);
@@ -61,12 +62,52 @@ export default function MeetingPage() {
   const lockedCategory = FIXED_CATEGORIES.includes(scheduledInterview?.position)
     ? scheduledInterview.position
     : null;
+  const RECORDING_CHUNK_MS = 4000;
 
   const getQuestionId = (question) =>
     question?.id ?? question?.Id ?? question?.questionId ?? question?.questionid ?? null;
 
   const getQuestionText = (question) =>
     question?.questiontext ?? question?.questionText ?? question?.question ?? "";
+
+  const appendChunkToQuestionAnswer = (questionId, questionText, chunkText) => {
+    if (!questionId || !chunkText?.trim()) return;
+    setQuestionAnswers((prev) => {
+      const existing = prev.find((qa) => String(qa.questionId) === String(questionId));
+      if (!existing) {
+        return [
+          ...prev,
+          {
+            questionId,
+            questionText: questionText || "",
+            answer: chunkText.trim(),
+          },
+        ];
+      }
+
+      return prev.map((qa) =>
+        String(qa.questionId) === String(questionId)
+          ? {
+              ...qa,
+              questionText: qa.questionText || questionText || "",
+              answer: `${qa.answer || ""} ${chunkText.trim()}`.trim(),
+            }
+          : qa
+      );
+    });
+  };
+
+  const trackAskedQuestion = (question) => {
+    const questionId = getQuestionId(question);
+    if (!questionId) return;
+    const questionText = getQuestionText(question);
+    setAskedQuestions((prev) => {
+      if (prev.some((item) => String(item.questionId) === String(questionId))) {
+        return prev;
+      }
+      return [...prev, { questionId, questionText }];
+    });
+  };
   
   // Sign language detection state
   const [signLanguageEnabled, setSignLanguageEnabled] = useState(false);
@@ -526,6 +567,7 @@ socket.on("ready-to-call", async () => {
       }
       
       setCurrentQuestion(question);
+      trackAskedQuestion(question);
       setPlagiarismScore(null);
       setPlagiarismDetails(null);
     });
@@ -558,7 +600,7 @@ socket.on("ready-to-call", async () => {
         setPlagiarismDetails({ interpretation });
       }
     });
-    socket.on("transcript-update", ({ transcript: newText, timestamp }) => {
+    socket.on("transcript-update", ({ transcript: newText, timestamp, questionId, questionText }) => {
       console.log("📥 Received transcript update:", newText);
       console.log("👤 User role:", userRole);
       // Update BOTH full transcript and current question transcript
@@ -567,6 +609,16 @@ socket.on("ready-to-call", async () => {
         console.log("📝 Full transcript length:", updated.length);
         return updated;
       });
+      if (questionId) {
+        appendChunkToQuestionAnswer(questionId, questionText, newText);
+      }
+
+      const activeQuestionId = getQuestionId(currentQuestion);
+      if (questionId && String(questionId) !== String(activeQuestionId)) {
+        // Chunk belongs to a previous question; don't pollute active question transcript
+        return;
+      }
+
       setCurrentQuestionTranscript(prev => {
         const updated = prev ? prev + " " + newText : newText;
         console.log("📝 Current question transcript:", updated.substring(0, 50) + "...");
@@ -681,6 +733,8 @@ const startTest = async () => {
   setCurrentQuestion(firstQuestion);
   setQuestionCount(1);
   setQuestionAnswers([]);
+  setAskedQuestions([]);
+  trackAskedQuestion(firstQuestion);
   setCurrentQuestionTranscript("");
 
 
@@ -910,10 +964,14 @@ const toggleTranscription = async () => {
         
         // 🔥 SEND TRANSCRIPT TO INTERVIEWER VIA SOCKET (real-time)
         if (socket && roomId && newTranscript.length > 2) {
+          const activeQuestionId = getQuestionId(currentQuestion);
+          const activeQuestionText = getQuestionText(currentQuestion);
           socket.emit("transcript-update", {
             roomId,
             transcript: newTranscript,
-            timestamp: Date.now()
+            timestamp: Date.now(),
+            questionId: activeQuestionId,
+            questionText: activeQuestionText
           });
           console.log("📤 Sent transcript to interviewer:", newTranscript);
         }
@@ -954,13 +1012,13 @@ const toggleTranscription = async () => {
             newRecorder.start();
             console.log("✅ Recorder restarted, will record for 10 seconds");
             
-            // Stop after 10 seconds to get a complete WebM file
+            // Stop after a shorter window so answers are captured per question reliably
             setTimeout(() => {
               if (newRecorder.state === "recording") {
                 newRecorder.stop();
-                console.log("⏹ Stopping recorder after 10 seconds");
+                console.log("⏹ Stopping recorder after chunk window");
               }
-            }, 10000);
+            }, RECORDING_CHUNK_MS);
           } catch (err) {
             console.error("❌ Failed to restart recorder:", err);
           }
@@ -977,13 +1035,13 @@ const toggleTranscription = async () => {
     recorder.start();
     console.log("🎙 Recorder started:", mimeType);
     
-    // Stop after 10 seconds to get complete WebM file
+    // Stop after a shorter window so short answers are not lost
     setTimeout(() => {
       if (recorder.state === "recording") {
         recorder.stop();
-        console.log("⏹ Stopping recorder after 10 seconds");
+        console.log("⏹ Stopping recorder after chunk window");
       }
-    }, 10000);
+    }, RECORDING_CHUNK_MS);
   } catch (err) {
     console.error("❌ MediaRecorder start failed", err);
   }
@@ -1303,11 +1361,27 @@ useEffect(() => {
       }
     });
 
-    return [...byQuestion.values()]
-      .filter((item) => item.questionId && item.answer && item.answer.length > 0)
+    const baseQuestions = askedQuestions.length
+      ? askedQuestions
+      : questions.map((q) => ({
+          questionId: getQuestionId(q),
+          questionText: getQuestionText(q),
+        })).filter((q) => q.questionId);
+
+    const merged = baseQuestions.map((q) => {
+      const answerEntry = byQuestion.get(q.questionId);
+      return {
+        questionId: q.questionId,
+        questionText: q.questionText || answerEntry?.questionText || "",
+        answer: answerEntry?.answer || "",
+      };
+    });
+
+    return merged
+      .filter((item) => item.questionId)
       .sort((a, b) => {
-        const indexA = questions.findIndex((q) => String(getQuestionId(q)) === String(a.questionId));
-        const indexB = questions.findIndex((q) => String(getQuestionId(q)) === String(b.questionId));
+        const indexA = baseQuestions.findIndex((q) => String(q.questionId) === String(a.questionId));
+        const indexB = baseQuestions.findIndex((q) => String(q.questionId) === String(b.questionId));
         if (indexA === -1 && indexB === -1) return 0;
         if (indexA === -1) return 1;
         if (indexB === -1) return -1;
@@ -1318,6 +1392,21 @@ useEffect(() => {
   const evaluateQuestionWiseAnswers = async (answersByQuestion) => {
     const evaluations = await Promise.all(
       answersByQuestion.map(async (qa) => {
+        if (!qa.answer || !qa.answer.trim()) {
+          return {
+            ...qa,
+            score: 0,
+            interpretation: "No answer captured for this question.",
+            details: {
+              strengths: [],
+              weaknesses: ["No answer available"],
+              matchedKeywords: [],
+              missedConcepts: [],
+              feedback: "Candidate answer was not captured for this question.",
+            },
+            aiDetection: null,
+          };
+        }
         try {
           const response = await fetch("/api/calculate-plagiarism", {
             method: "POST",
