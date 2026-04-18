@@ -104,6 +104,20 @@ export default function MeetingPage() {
     console.log(`[InterviewQA] ${label}`, data);
   };
 
+  const getRecorderDebugState = () => ({
+    recorderExists: !!mediaRecorderRef.current,
+    recorderState: mediaRecorderRef.current?.state || "none",
+    activeQuestionId: getQuestionId(activeQuestionRef.current),
+    activeQuestionText: getQuestionText(activeQuestionRef.current),
+    lastAskedQuestionId: lastQuestionAskedRef.current?.id ?? null,
+    lastAskedQuestionText: lastQuestionAskedRef.current?.text || "",
+    recordingChunkQuestionId: recordingChunkQuestionRef.current?.id ?? null,
+    recordingChunkQuestionText: recordingChunkQuestionRef.current?.text || "",
+    flushChunkQuestionId: flushChunkTagRef.current?.id ?? null,
+    flushChunkQuestionText: flushChunkTagRef.current?.text || "",
+    transcriptionEnabled,
+  });
+
   const clearChunkStopTimer = () => {
     if (chunkStopTimerRef.current) {
       clearTimeout(chunkStopTimerRef.current);
@@ -115,13 +129,23 @@ export default function MeetingPage() {
   const resolveSegmentQuestionSnap = () => {
     const fromSocket = lastQuestionAskedRef.current;
     if (fromSocket?.id != null && fromSocket.id !== "") {
-      return { id: fromSocket.id, text: fromSocket.text || "" };
+      const snap = { id: fromSocket.id, text: fromSocket.text || "" };
+      logInterviewQA("resolveSegmentQuestionSnap:lastQuestionAsked", {
+        snap,
+        recorder: getRecorderDebugState(),
+      });
+      return snap;
     }
     const q = activeQuestionRef.current;
-    return {
+    const snap = {
       id: getQuestionId(q),
       text: getQuestionText(q) || "",
     };
+    logInterviewQA("resolveSegmentQuestionSnap:activeQuestion", {
+      snap,
+      recorder: getRecorderDebugState(),
+    });
+    return snap;
   };
 
   const scheduleChunkStop = (rec) => {
@@ -140,17 +164,37 @@ export default function MeetingPage() {
     if (r && r.state === "recording") {
       try {
         flushChunkTagRef.current = { ...recordingChunkQuestionRef.current };
+        logInterviewQA("flushRecordingChunk:requestData", {
+          flushTag: flushChunkTagRef.current,
+          recorder: getRecorderDebugState(),
+        });
         r.requestData();
       } catch (err) {
         console.warn("⚠️ requestData failed, falling back to stop/restart:", err?.message || err);
+        logInterviewQA("flushRecordingChunk:fallbackStop", {
+          error: err?.message || String(err),
+          recorder: getRecorderDebugState(),
+        });
         r.stop();
       }
+    } else {
+      logInterviewQA("flushRecordingChunk:skipped", {
+        reason: !r ? "no_recorder" : `state_${r.state}`,
+        recorder: getRecorderDebugState(),
+      });
     }
   };
 
   const appendChunkToQuestionAnswer = (questionId, questionText, chunkText) => {
     if (!questionId || !chunkText?.trim()) return;
     const key = String(questionId);
+    logInterviewQA("appendChunkToQuestionAnswer:before", {
+      questionId,
+      questionText,
+      chunkPreview: chunkText.slice(0, 140),
+      existingTranscriptPreview: (questionTranscriptMapRef.current[key] || "").slice(0, 140),
+      existingTranscriptLength: (questionTranscriptMapRef.current[key] || "").length,
+    });
     setQuestionTranscriptMap((prev) => ({
       ...prev,
       [key]: `${prev[key] || ""} ${chunkText.trim()}`.trim(),
@@ -177,6 +221,11 @@ export default function MeetingPage() {
             }
           : qa
       );
+    });
+    logInterviewQA("appendChunkToQuestionAnswer:queued", {
+      questionId,
+      questionText,
+      chunkPreview: chunkText.slice(0, 140),
     });
   };
 
@@ -622,6 +671,14 @@ socket.on("ready-to-call", async () => {
     socket.on("question-asked", ({ question, previousQuestionId, previousQuestionText }) => {
       const normalizedQuestionId = getQuestionId(question);
       console.log("📬 Question-asked event received:", { questionId: normalizedQuestionId, previousQuestionId });
+      logInterviewQA("socket:question-asked:received", {
+        role: userRole,
+        normalizedQuestionId,
+        questionText: getQuestionText(question),
+        previousQuestionId,
+        previousQuestionText,
+        recorder: getRecorderDebugState(),
+      });
 
       if (userRole === "candidate") {
         flushRecordingChunk();
@@ -634,6 +691,10 @@ socket.on("ready-to-call", async () => {
             id: normalizedQuestionId,
             text: getQuestionText(question),
           };
+          logInterviewQA("socket:question-asked:candidate-tag-updated", {
+            newTag: recordingChunkQuestionRef.current,
+            recorder: getRecorderDebugState(),
+          });
         }
       }
       
@@ -741,6 +802,8 @@ socket.on("ready-to-call", async () => {
           questionId,
           questionTextPreview: (questionText || "").slice(0, 60),
           chunkPreview: (newText || "").slice(0, 120),
+          timestamp,
+          recorder: getRecorderDebugState(),
         });
       }
 
@@ -1044,6 +1107,9 @@ const toggleTranscription = async () => {
 
   // 🛑 STOP transcription
   if (mediaRecorderRef.current) {
+    logInterviewQA("toggleTranscription:stop_requested", {
+      recorder: getRecorderDebugState(),
+    });
     flushRecordingChunk();
     mediaRecorderRef.current.stop();
     mediaRecorderRef.current = null;
@@ -1071,10 +1137,19 @@ const toggleTranscription = async () => {
   setTranscriptionEnabled(true);
   const firstSnap = resolveSegmentQuestionSnap();
   recordingChunkQuestionRef.current = { ...firstSnap };
+  logInterviewQA("toggleTranscription:start_requested", {
+    mimeType,
+    firstSnap,
+    recorder: getRecorderDebugState(),
+  });
 
   recorder.ondataavailable = async (e) => {
     if (!e.data || e.data.size === 0) {
       console.log("⚠️ Audio chunk is empty, skipping");
+      logInterviewQA("recorder:ondataavailable:empty", {
+        size: e.data?.size || 0,
+        recorder: getRecorderDebugState(),
+      });
       return;
     }
 
@@ -1085,6 +1160,13 @@ const toggleTranscription = async () => {
     }
     const chunkQuestionId = forcedTag?.id ?? recordingChunkQuestionRef.current?.id ?? null;
     const chunkQuestionText = forcedTag?.text ?? recordingChunkQuestionRef.current?.text ?? "";
+    logInterviewQA("recorder:ondataavailable:start", {
+      blobSize: e.data.size,
+      forcedTag,
+      chunkQuestionId,
+      chunkQuestionText,
+      recorder: getRecorderDebugState(),
+    });
 
     const formData = new FormData();
     formData.append("file", e.data, "chunk.webm");
@@ -1097,6 +1179,14 @@ const toggleTranscription = async () => {
 
       const data = await res.json();
       console.log("📡 API Response:", data);
+      logInterviewQA("recorder:ondataavailable:api_response", {
+        chunkQuestionId,
+        chunkQuestionText,
+        skipped: !!data.skipped,
+        hasError: !!data.error,
+        textPreview: (data.text || "").slice(0, 120),
+        recorder: getRecorderDebugState(),
+      });
 
       if (data.error) {
         console.warn("⚠️ Transcription API error:", data.errorMessage);
@@ -1109,6 +1199,13 @@ const toggleTranscription = async () => {
         if (chunkQuestionId) {
           appendChunkToQuestionAnswer(chunkQuestionId, chunkQuestionText, newTranscript);
         }
+        logInterviewQA("recorder:ondataavailable:accepted", {
+          chunkQuestionId,
+          chunkQuestionText,
+          transcriptPreview: newTranscript.slice(0, 160),
+          transcriptLength: newTranscript.length,
+          recorder: getRecorderDebugState(),
+        });
 
         setCurrentQuestionTranscript((prev) => {
           const activeId = getQuestionId(activeQuestionRef.current);
@@ -1133,21 +1230,40 @@ const toggleTranscription = async () => {
       }
     } catch (err) {
       console.error("❌ Transcription error:", err);
+      logInterviewQA("recorder:ondataavailable:error", {
+        error: err?.message || String(err),
+        chunkQuestionId,
+        chunkQuestionText,
+        recorder: getRecorderDebugState(),
+      });
     }
   };
 
   recorder.onstop = () => {
     console.log("🛑 Recorder stopped");
+    logInterviewQA("recorder:onstop", {
+      recorder: getRecorderDebugState(),
+    });
   };
 
   try {
     // Continuous recording; MediaRecorder emits chunks every RECORDING_CHUNK_MS.
     recorder.start(RECORDING_CHUNK_MS);
     console.log("🎙 Recorder started (continuous):", mimeType, RECORDING_CHUNK_MS);
+    logInterviewQA("recorder:start_success", {
+      mimeType,
+      timesliceMs: RECORDING_CHUNK_MS,
+      recorder: getRecorderDebugState(),
+    });
   } catch (err) {
     mediaRecorderRef.current = null;
     setTranscriptionEnabled(false);
     console.error("❌ MediaRecorder start failed", err);
+    logInterviewQA("recorder:start_error", {
+      error: err?.message || String(err),
+      mimeType,
+      recorder: getRecorderDebugState(),
+    });
   }
 };
 
@@ -1574,6 +1690,14 @@ useEffect(() => {
 
   // Generate question-wise interview report
   const checkPlagiarism = async () => {
+    logInterviewQA("checkPlagiarism:start", {
+      role: userRole,
+      currentQuestionId: getQuestionId(currentQuestion),
+      currentQuestionText: getQuestionText(currentQuestion),
+      questionAnswersCount: questionAnswers.length,
+      mapKeys: Object.keys(questionTranscriptMapRef.current),
+      recorder: getRecorderDebugState(),
+    });
     if (socket && userRole === "interviewer") {
       socket.emit("force-transcription-flush", {
         roomId,
@@ -1583,6 +1707,14 @@ useEffect(() => {
     await new Promise((resolve) => setTimeout(resolve, 350));
 
     const answersByQuestion = buildQuestionAnswerPayload();
+    logInterviewQA("checkPlagiarism:answersByQuestion", {
+      rows: answersByQuestion.map((qa) => ({
+        questionId: qa.questionId,
+        questionText: qa.questionText,
+        answerLength: (qa.answer || "").length,
+        answerPreview: (qa.answer || "").slice(0, 140),
+      })),
+    });
 
     if (!answersByQuestion.length) {
       alert("No question-wise answers found. Please record answers before generating report.");
