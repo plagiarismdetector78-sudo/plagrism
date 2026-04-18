@@ -825,7 +825,9 @@ socket.on("ready-to-call", async () => {
       const activeQuestionId = getQuestionId(activeQuestion);
       const activeQuestionText = getQuestionText(activeQuestion);
 
-      const effectiveQuestionId = decodedQuestionId ?? questionId ?? activeQuestionId ?? null;
+      // IMPORTANT: If the signaling server drops metadata, DO NOT guess and mis-assign.
+      // We only attach to a question when we have an explicit id (decoded from transcript tag or provided).
+      const effectiveQuestionId = decodedQuestionId ?? questionId ?? null;
       const effectiveQuestionText = questionText || activeQuestionText || "";
 
       logInterviewQA("transcript-update:received", {
@@ -842,10 +844,18 @@ socket.on("ready-to-call", async () => {
 
       if (effectiveQuestionId) {
         appendChunkToQuestionAnswer(effectiveQuestionId, effectiveQuestionText, decodedText);
+      } else {
+        logInterviewQA("transcript-update:untagged_drop", {
+          reason: "missing_questionId_in_payload_and_tag",
+          activeQuestionId,
+          activeQuestionTextPreview: (activeQuestionText || "").slice(0, 60),
+          chunkPreview: (decodedText || "").slice(0, 120),
+          timestamp,
+        });
       }
 
       setCurrentQuestionTranscript((prev) => {
-        if (effectiveQuestionId && String(effectiveQuestionId) !== String(activeQuestionId)) {
+        if (!effectiveQuestionId || String(effectiveQuestionId) !== String(activeQuestionId)) {
           return prev;
         }
         const merged = prev ? `${prev.trim()} ${decodedText}`.trim() : decodedText.trim();
