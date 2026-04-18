@@ -158,25 +158,18 @@ export default function MeetingPage() {
     }, RECORDING_CHUNK_MS);
   };
 
-  /** Flush current buffered audio without ending transcription session. */
+  /** Flush current buffered audio by ending the current segment. */
   const flushRecordingChunk = () => {
     const r = mediaRecorderRef.current;
     if (r && r.state === "recording") {
-      try {
-        flushChunkTagRef.current = { ...recordingChunkQuestionRef.current };
-        logInterviewQA("flushRecordingChunk:requestData", {
-          flushTag: flushChunkTagRef.current,
-          recorder: getRecorderDebugState(),
-        });
-        r.requestData();
-      } catch (err) {
-        console.warn("⚠️ requestData failed, falling back to stop/restart:", err?.message || err);
-        logInterviewQA("flushRecordingChunk:fallbackStop", {
-          error: err?.message || String(err),
-          recorder: getRecorderDebugState(),
-        });
-        r.stop();
-      }
+      // NOTE: requestData() produced WebM fragments Groq sometimes rejects as invalid.
+      // stop() finalizes the segment into a valid file; onstop we restart a new segment.
+      flushChunkTagRef.current = { ...recordingChunkQuestionRef.current };
+      logInterviewQA("flushRecordingChunk:stop", {
+        flushTag: flushChunkTagRef.current,
+        recorder: getRecorderDebugState(),
+      });
+      r.stop();
     } else {
       logInterviewQA("flushRecordingChunk:skipped", {
         reason: !r ? "no_recorder" : `state_${r.state}`,
@@ -809,6 +802,12 @@ socket.on("ready-to-call", async () => {
       }
     });
     socket.on("transcript-update", ({ transcript: newText, timestamp, questionId, questionText }) => {
+      logInterviewQA("transcript-update:raw_payload", {
+        role: userRole,
+        rawTranscriptPreview: String(newText || "").slice(0, 80),
+        rawQuestionId: questionId ?? null,
+        rawQuestionTextPreview: String(questionText || "").slice(0, 60),
+      });
       const decoded = decodeTaggedTranscript(newText);
       const decodedText = decoded.text;
       const decodedQuestionId = decoded.questionId;
@@ -825,8 +824,7 @@ socket.on("ready-to-call", async () => {
       const activeQuestionId = getQuestionId(activeQuestion);
       const activeQuestionText = getQuestionText(activeQuestion);
 
-      // IMPORTANT: If the signaling server drops metadata, DO NOT guess and mis-assign.
-      // We only attach to a question when we have an explicit id (decoded from transcript tag or provided).
+      // Only attach to a question when we have an explicit id (decoded from transcript tag or provided).
       const effectiveQuestionId = decodedQuestionId ?? questionId ?? null;
       const effectiveQuestionText = questionText || activeQuestionText || "";
 
@@ -1272,6 +1270,7 @@ const toggleTranscription = async () => {
             questionId: chunkQuestionId,
             segmentQuestionText: (chunkQuestionText || "").slice(0, 60),
             chunkPreview: newTranscript.slice(0, 120),
+            emittedTranscriptPreview: encodeTaggedTranscript(chunkQuestionId, newTranscript).slice(0, 80),
           });
           socket.emit("transcript-update", {
             roomId,
@@ -1296,20 +1295,60 @@ const toggleTranscription = async () => {
 
   recorder.onstop = () => {
     console.log("🛑 Recorder stopped");
-    logInterviewQA("recorder:onstop", {
-      recorder: getRecorderDebugState(),
-    });
+    logInterviewQA("recorder:onstop", { recorder: getRecorderDebugState() });
+
+    // Auto-restart if transcription still enabled (segment-based recording).
+    if (!mediaRecorderRef.current) return;
+    if (!localStream) return;
+    const audioTracksRestart = localStream.getAudioTracks();
+    if (!audioTracksRestart.length || !audioTracksRestart[0].enabled) return;
+
+    const nextSnap = resolveSegmentQuestionSnap();
+    recordingChunkQuestionRef.current = { ...nextSnap };
+
+    const audioStreamRestart = new MediaStream([audioTracksRestart[0]]);
+    const nextRecorder = new MediaRecorder(audioStreamRestart, { mimeType });
+    mediaRecorderRef.current = nextRecorder;
+
+    // Reuse the same handlers (they always compute tags at blob time + forced flushTag).
+    nextRecorder.ondataavailable = recorder.ondataavailable;
+    nextRecorder.onstop = recorder.onstop;
+
+    try {
+      nextRecorder.start();
+      // Stop after chunk window to create a valid file for Groq.
+      clearChunkStopTimer();
+      chunkStopTimerRef.current = setTimeout(() => {
+        if (nextRecorder.state === "recording") {
+          nextRecorder.stop();
+        }
+        chunkStopTimerRef.current = null;
+      }, RECORDING_CHUNK_MS);
+      logInterviewQA("recorder:restart_success", {
+        nextSnap,
+        recorder: getRecorderDebugState(),
+      });
+    } catch (err) {
+      console.error("❌ Failed to restart recorder:", err);
+      logInterviewQA("recorder:restart_error", {
+        error: err?.message || String(err),
+        recorder: getRecorderDebugState(),
+      });
+    }
   };
 
   try {
-    // Continuous recording; MediaRecorder emits chunks every RECORDING_CHUNK_MS.
-    recorder.start(RECORDING_CHUNK_MS);
-    console.log("🎙 Recorder started (continuous):", mimeType, RECORDING_CHUNK_MS);
-    logInterviewQA("recorder:start_success", {
-      mimeType,
-      timesliceMs: RECORDING_CHUNK_MS,
-      recorder: getRecorderDebugState(),
-    });
+    recorder.start();
+    // Stop after chunk window to create a valid file for Groq.
+    clearChunkStopTimer();
+    chunkStopTimerRef.current = setTimeout(() => {
+      if (recorder.state === "recording") {
+        recorder.stop();
+      }
+      chunkStopTimerRef.current = null;
+    }, RECORDING_CHUNK_MS);
+    console.log("🎙 Recorder started (segment):", mimeType, RECORDING_CHUNK_MS);
+    logInterviewQA("recorder:start_success", { mimeType, recorder: getRecorderDebugState() });
   } catch (err) {
     mediaRecorderRef.current = null;
     setTranscriptionEnabled(false);
