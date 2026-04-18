@@ -22,6 +22,10 @@ export default function MeetingPage() {
   const recordingChunkQuestionRef = useRef({ id: null, text: "" });
   /** One-shot tag override for chunks flushed via requestData at question/report boundary. */
   const flushChunkTagRef = useRef(null);
+  /** Candidate: request id waiting for final ondataavailable processing before acking flush. */
+  const pendingFlushAckRequestRef = useRef(null);
+  /** Interviewer: awaiting flush-ack request id before generating report. */
+  const awaitingFlushAckRequestRef = useRef(null);
   /**
    * Candidate: last question payload from `question-asked` (interviewer broadcast).
    * Used for every new MediaRecorder segment so timer-only restarts match the question on screen,
@@ -863,8 +867,28 @@ socket.on("ready-to-call", async () => {
     });
     socket.on("force-transcription-flush", ({ reason }) => {
       if (userRole !== "candidate") return;
-      logInterviewQA("force-transcription-flush", { reason: reason || "unspecified" });
-      flushRecordingChunk();
+      const requestId = reason?.requestId || reason?.id || null;
+      logInterviewQA("force-transcription-flush", { reason: reason || "unspecified", requestId });
+      if (requestId) {
+        pendingFlushAckRequestRef.current = requestId;
+      }
+
+      const rec = mediaRecorderRef.current;
+      if (rec && rec.state === "recording") {
+        flushRecordingChunk();
+      } else if (socket && roomId && requestId) {
+        socket.emit("transcription-flush-ack", {
+          roomId,
+          requestId,
+          status: "no_active_recorder",
+        });
+      }
+    });
+    socket.on("transcription-flush-ack", ({ requestId, status }) => {
+      if (!requestId) return;
+      if (awaitingFlushAckRequestRef.current !== requestId) return;
+      logInterviewQA("transcription-flush-ack:received", { requestId, status });
+      awaitingFlushAckRequestRef.current = null;
     });
 
 
@@ -893,6 +917,7 @@ socket.on("ready-to-call", async () => {
     socket.off("plagiarism-result");
     socket.off("transcript-update");
     socket.off("force-transcription-flush");
+    socket.off("transcription-flush-ack");
   }
       cleanupMedia();
     };
@@ -1290,6 +1315,21 @@ const toggleTranscription = async () => {
         chunkQuestionText,
         recorder: getRecorderDebugState(),
       });
+    } finally {
+      const pendingRequestId = pendingFlushAckRequestRef.current;
+      if (pendingRequestId && socket && roomId) {
+        socket.emit("transcription-flush-ack", {
+          roomId,
+          requestId: pendingRequestId,
+          status: "processed",
+        });
+        logInterviewQA("transcription-flush-ack:sent", {
+          requestId: pendingRequestId,
+          chunkQuestionId,
+          chunkQuestionText,
+        });
+        pendingFlushAckRequestRef.current = null;
+      }
     }
   };
 
@@ -1793,12 +1833,31 @@ useEffect(() => {
       recorder: getRecorderDebugState(),
     });
     if (socket && userRole === "interviewer") {
+      const requestId = `flush-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      awaitingFlushAckRequestRef.current = requestId;
       socket.emit("force-transcription-flush", {
         roomId,
-        reason: "report_generation",
+        reason: { type: "report_generation", requestId },
       });
+
+      await new Promise((resolve) => {
+        const startedAt = Date.now();
+        const poll = () => {
+          if (awaitingFlushAckRequestRef.current !== requestId) {
+            return resolve();
+          }
+          if (Date.now() - startedAt >= 2500) {
+            // Timeout safeguard so report generation never hangs.
+            awaitingFlushAckRequestRef.current = null;
+            return resolve();
+          }
+          setTimeout(poll, 100);
+        };
+        poll();
+      });
+    } else {
+      await new Promise((resolve) => setTimeout(resolve, 300));
     }
-    await new Promise((resolve) => setTimeout(resolve, 350));
 
     const answersByQuestion = buildQuestionAnswerPayload();
     logInterviewQA("checkPlagiarism:answersByQuestion", {
