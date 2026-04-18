@@ -1,4 +1,7 @@
 // pages/api/calculate-plagiarism.js
+// Loads question + gold expected answer from Postgres, then scores the candidate transcript
+// via Hugging Face: sentence-transformers/all-MiniLM-L6-v2 embeddings + cosine similarity,
+// blended with keyword/concept coverage and a ChatGPT-detector signal (see lib/huggingface-evaluation.js).
 import { query } from '../../lib/db';
 import { evaluateAnswerWithHuggingFace } from '../../lib/huggingface-evaluation';
 
@@ -85,7 +88,12 @@ export default async function handler(req, res) {
                     clarity: evaluation.clarity
                 },
                 evaluationType: evaluation.evaluationType,
-                aiDetection: evaluation.aiDetection || null
+                aiDetection: evaluation.aiDetection || null,
+                semanticScoring: {
+                    embeddingModel: 'sentence-transformers/all-MiniLM-L6-v2',
+                    similarityMetric: 'cosine_similarity',
+                    note: 'Expected answer and candidate answer are embedded; cosine similarity drives the semantic score (with Jaccard-style fallback on API errors).',
+                },
             }
         };
         

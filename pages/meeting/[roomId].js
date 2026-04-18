@@ -1016,115 +1016,125 @@ const toggleTranscription = async () => {
   mediaRecorderRef.current = recorder;
   setTranscriptionEnabled(true);
   applyPendingOrActiveRecordingQuestion();
+  const firstSegmentTag = {
+    id: recordingChunkQuestionRef.current?.id ?? null,
+    text: recordingChunkQuestionRef.current?.text || "",
+  };
 
-  recorder.ondataavailable = async (e) => {
-    if (!e.data || e.data.size === 0) {
-      console.log("⚠️ Audio chunk is empty, skipping");
-      return;
-    }
+  /**
+   * Each MediaRecorder instance must have its own handlers with a frozen segment tag.
+   * Reusing one ondataavailable across recorders caused late blobs to read the *next*
+   * segment's question from recordingChunkQuestionRef (answers shifted by one in reports).
+   */
+  const attachRecorderHandlersForSegment = (rec, segmentTagFrozen, mime) => {
+    const segment = { id: segmentTagFrozen.id, text: segmentTagFrozen.text || "" };
 
-    console.log("🎤 Audio chunk received, size:", e.data.size, "bytes");
+    rec.ondataavailable = async (e) => {
+      if (!e.data || e.data.size === 0) {
+        console.log("⚠️ Audio chunk is empty, skipping");
+        return;
+      }
 
-    const chunkTag = {
-      id: recordingChunkQuestionRef.current?.id,
-      text: recordingChunkQuestionRef.current?.text || "",
-    };
+      console.log("🎤 Audio chunk received, size:", e.data.size, "bytes");
+      const chunkTag = segment;
 
-    const formData = new FormData();
-    formData.append("file", e.data, "chunk.webm");
+      const formData = new FormData();
+      formData.append("file", e.data, "chunk.webm");
 
-    try {
-      const res = await fetch("/api/transcribe-realtime", {
-        method: "POST",
-        body: formData,
-      });
-
-      const data = await res.json();
-      console.log("📡 API Response:", data);
-      
-      // Check for errors from API
-      if (data.error) {
-        console.warn("⚠️ Transcription API error:", data.errorMessage);
-        console.log("Skipping this chunk and continuing...");
-      } else if (data.skipped) {
-        console.log("⚠️ Chunk skipped:", data.reason);
-      } else if (data.text && data.text.trim().length > 0) {
-        console.log("📝 Transcript:", data.text);
-        const newTranscript = data.text.trim();
-        const chunkQuestionId = chunkTag.id;
-        const chunkQuestionText = chunkTag.text;
-
-        setFullTranscript((prev) => (prev ? `${prev} ${newTranscript}` : newTranscript).trim());
-        if (chunkQuestionId) {
-          appendChunkToQuestionAnswer(chunkQuestionId, chunkQuestionText, newTranscript);
-        }
-        setCurrentQuestionTranscript((prev) => {
-          const activeId = getQuestionId(activeQuestionRef.current);
-          if (chunkQuestionId && String(chunkQuestionId) !== String(activeId)) {
-            return prev;
-          }
-          return prev ? `${prev.trim()} ${newTranscript}`.trim() : newTranscript;
+      try {
+        const res = await fetch("/api/transcribe-realtime", {
+          method: "POST",
+          body: formData,
         });
 
-        if (socket && roomId && newTranscript.length > 2 && chunkQuestionId) {
-          socket.emit("transcript-update", {
-            roomId,
-            transcript: newTranscript,
-            timestamp: Date.now(),
-            questionId: chunkQuestionId,
-            questionText: chunkQuestionText,
-          });
-          console.log("📤 Sent transcript to interviewer:", newTranscript);
-        }
-      } else {
-        console.log("⚠️ Empty transcript (probably silence), continuing...");
-      }
-    } catch (err) {
-      console.error("❌ Transcription error:", err);
-      console.log("Continuing despite error...");
-    }
-  };
+        const data = await res.json();
+        console.log("📡 API Response:", data);
 
-  // Handle recorder stop event to restart automatically
-  recorder.onstop = () => {
-    console.log("🔄 Recorder stopped, checking if should restart...");
-    
-    // Check if recorder still exists and wasn't manually cleared (user didn't click stop)
-    if (mediaRecorderRef.current) {
-      setTimeout(() => {
-        if (!localStream) {
-          console.log("❌ No local stream, cannot restart");
-          return;
-        }
-        
-        const audioTracks = localStream.getAudioTracks();
-        if (audioTracks.length > 0 && audioTracks[0].enabled) {
-          console.log("🔄 Restarting recorder for next chunk...");
-          
-          const audioStream = new MediaStream([audioTracks[0]]);
-          const newRecorder = new MediaRecorder(audioStream, { mimeType });
-          mediaRecorderRef.current = newRecorder;
-          
-          // Reattach handlers
-          newRecorder.ondataavailable = recorder.ondataavailable;
-          newRecorder.onstop = recorder.onstop;
-          
-          try {
-            newRecorder.start();
-            applyPendingOrActiveRecordingQuestion();
-            scheduleChunkStop(newRecorder);
-            console.log("✅ Recorder restarted for next chunk");
-          } catch (err) {
-            console.error("❌ Failed to restart recorder:", err);
+        if (data.error) {
+          console.warn("⚠️ Transcription API error:", data.errorMessage);
+          console.log("Skipping this chunk and continuing...");
+        } else if (data.skipped) {
+          console.log("⚠️ Chunk skipped:", data.reason);
+        } else if (data.text && data.text.trim().length > 0) {
+          console.log("📝 Transcript:", data.text);
+          const newTranscript = data.text.trim();
+          const chunkQuestionId = chunkTag.id;
+          const chunkQuestionText = chunkTag.text;
+
+          setFullTranscript((prev) => (prev ? `${prev} ${newTranscript}` : newTranscript).trim());
+          if (chunkQuestionId) {
+            appendChunkToQuestionAnswer(chunkQuestionId, chunkQuestionText, newTranscript);
+          }
+          setCurrentQuestionTranscript((prev) => {
+            const activeId = getQuestionId(activeQuestionRef.current);
+            if (chunkQuestionId && String(chunkQuestionId) !== String(activeId)) {
+              return prev;
+            }
+            return prev ? `${prev.trim()} ${newTranscript}`.trim() : newTranscript;
+          });
+
+          if (socket && roomId && newTranscript.length > 2 && chunkQuestionId) {
+            socket.emit("transcript-update", {
+              roomId,
+              transcript: newTranscript,
+              timestamp: Date.now(),
+              questionId: chunkQuestionId,
+              questionText: chunkQuestionText,
+            });
+            console.log("📤 Sent transcript to interviewer:", newTranscript);
           }
         } else {
-          console.log("❌ Audio tracks not available or disabled");
+          console.log("⚠️ Empty transcript (probably silence), continuing...");
         }
-      }, 100);
-    } else {
-      console.log("❌ Recorder ref cleared, user stopped recording");
-    }
+      } catch (err) {
+        console.error("❌ Transcription error:", err);
+        console.log("Continuing despite error...");
+      }
+    };
+
+    rec.onstop = () => {
+      console.log("🔄 Recorder stopped, checking if should restart...");
+
+      if (mediaRecorderRef.current) {
+        setTimeout(() => {
+          if (!localStream) {
+            console.log("❌ No local stream, cannot restart");
+            return;
+          }
+
+          const audioTracksRestart = localStream.getAudioTracks();
+          if (audioTracksRestart.length > 0 && audioTracksRestart[0].enabled) {
+            console.log("🔄 Restarting recorder for next chunk...");
+
+            const audioStreamRestart = new MediaStream([audioTracksRestart[0]]);
+            const newRecorder = new MediaRecorder(audioStreamRestart, { mimeType: mime });
+            mediaRecorderRef.current = newRecorder;
+
+            applyPendingOrActiveRecordingQuestion();
+            const nextSegmentTag = {
+              id: recordingChunkQuestionRef.current?.id ?? null,
+              text: recordingChunkQuestionRef.current?.text || "",
+            };
+            attachRecorderHandlersForSegment(newRecorder, nextSegmentTag, mime);
+
+            try {
+              newRecorder.start();
+              scheduleChunkStop(newRecorder);
+              console.log("✅ Recorder restarted for next chunk");
+            } catch (err) {
+              console.error("❌ Failed to restart recorder:", err);
+            }
+          } else {
+            console.log("❌ Audio tracks not available or disabled");
+          }
+        }, 100);
+      } else {
+        console.log("❌ Recorder ref cleared, user stopped recording");
+      }
+    };
   };
+
+  attachRecorderHandlersForSegment(recorder, firstSegmentTag, mimeType);
 
   try {
     recorder.start();
@@ -1434,6 +1444,8 @@ useEffect(() => {
   };
 
   const buildQuestionAnswerPayload = () => {
+    const normKey = (id) => (id == null || id === "" ? null : String(id));
+
     const compiled = [...questionAnswers];
 
     // Always include latest active question answer before generating report
@@ -1448,13 +1460,14 @@ useEffect(() => {
       });
     }
 
-    // De-duplicate by questionId, keep latest non-empty answer
+    // De-duplicate by questionId (string keys — avoids Map misses when mixing number/string ids)
     const byQuestion = new Map();
     compiled.forEach((item) => {
-      if (!item?.questionId) return;
-      const existing = byQuestion.get(item.questionId);
+      const key = normKey(item?.questionId);
+      if (!key) return;
+      const existing = byQuestion.get(key);
       if (!existing || (item.answer && item.answer.length >= existing.answer.length)) {
-        byQuestion.set(item.questionId, {
+        byQuestion.set(key, {
           questionId: item.questionId,
           questionText: item.questionText || existing?.questionText || "",
           answer: (item.answer || "").trim()
@@ -1465,8 +1478,9 @@ useEffect(() => {
     const baseQuestions = getAskedQuestionList();
 
     const merged = baseQuestions.map((q) => {
-      const answerEntry = byQuestion.get(q.questionId);
-      const mapAnswer = questionTranscriptMap[String(q.questionId)] || "";
+      const key = normKey(q.questionId);
+      const answerEntry = key ? byQuestion.get(key) : null;
+      const mapAnswer = key ? (questionTranscriptMap[key] || "") : "";
       return {
         questionId: q.questionId,
         questionText: q.questionText || answerEntry?.questionText || "",
@@ -1475,7 +1489,7 @@ useEffect(() => {
     });
 
     return merged
-      .filter((item) => item.questionId)
+      .filter((item) => normKey(item.questionId))
       .sort((a, b) => {
         const indexA = baseQuestions.findIndex((q) => String(q.questionId) === String(a.questionId));
         const indexB = baseQuestions.findIndex((q) => String(q.questionId) === String(b.questionId));
