@@ -39,6 +39,8 @@ export default function MeetingPage() {
   const [currentQuestionTranscript, setCurrentQuestionTranscript] = useState(""); // Transcript for CURRENT question only
   const [questionAnswers, setQuestionAnswers] = useState([]); // Store all Q&A pairs: [{questionId, questionText, answer}]
   const [questionTranscriptMap, setQuestionTranscriptMap] = useState({}); // { [questionId]: transcript }
+  /** Mirrors questionTranscriptMap for socket handlers (effect deps omit map → avoid stale {}). */
+  const questionTranscriptMapRef = useRef({});
   const [askedQuestions, setAskedQuestions] = useState([]); // Track all displayed questions in this interview
   const [interviewStartTime, setInterviewStartTime] = useState(null); // Track when interview started
   const [questionCount, setQuestionCount] = useState(1); // Track total questions asked (start at 1)
@@ -73,7 +75,12 @@ export default function MeetingPage() {
   const RECORDING_CHUNK_MS = 12000;
 
   const getQuestionId = (question) =>
-    question?.id ?? question?.Id ?? question?.questionId ?? question?.questionid ?? null;
+    question?.id ??
+    question?.Id ??
+    question?.questionId ??
+    question?.questionid ??
+    question?.question_id ??
+    null;
 
   const getQuestionText = (question) =>
     question?.questiontext ?? question?.questionText ?? question?.question ?? "";
@@ -81,6 +88,15 @@ export default function MeetingPage() {
   useEffect(() => {
     activeQuestionRef.current = currentQuestion;
   }, [currentQuestion]);
+
+  useEffect(() => {
+    questionTranscriptMapRef.current = questionTranscriptMap;
+  }, [questionTranscriptMap]);
+
+  const logInterviewQA = (label, data) => {
+    if (process.env.NEXT_PUBLIC_DEBUG_MEETING_QA !== "1") return;
+    console.log(`[InterviewQA] ${label}`, data);
+  };
 
   const clearChunkStopTimer = () => {
     if (chunkStopTimerRef.current) {
@@ -636,9 +652,13 @@ socket.on("ready-to-call", async () => {
         setCurrentQuestionTranscript(prev => {
           if (prev && prev.trim()) {
             console.log("💾 Saving answer for question", previousQuestionId, ":", prev.substring(0, 50) + "...");
-            setQuestionAnswers(answers => [
-              ...answers.filter(qa => qa.questionId !== previousQuestionId),
-              { questionId: previousQuestionId, questionText: previousQuestionText || "", answer: prev.trim() }
+            setQuestionAnswers((answers) => [
+              ...answers.filter((qa) => String(qa.questionId) !== String(previousQuestionId)),
+              {
+                questionId: previousQuestionId,
+                questionText: previousQuestionText || "",
+                answer: prev.trim(),
+              },
             ]);
           }
           console.log("🧹 Clearing currentQuestionTranscript for new question");
@@ -649,9 +669,18 @@ socket.on("ready-to-call", async () => {
       setCurrentQuestion(question);
       trackAskedQuestion(question);
       const newQuestionId = getQuestionId(question);
-      setCurrentQuestionTranscript(
-        newQuestionId ? (questionTranscriptMap[String(newQuestionId)] || "") : ""
-      );
+      const resumed = newQuestionId
+        ? (questionTranscriptMapRef.current[String(newQuestionId)] || "")
+        : "";
+      setCurrentQuestionTranscript(resumed);
+      logInterviewQA("question-asked", {
+        role: userRole,
+        newQuestionId,
+        newQuestionPreview: getQuestionText(question).slice(0, 80),
+        previousQuestionId,
+        mapKeyCount: Object.keys(questionTranscriptMapRef.current).length,
+        resumedLen: resumed.length,
+      });
       setPlagiarismScore(null);
       setPlagiarismDetails(null);
     });
@@ -695,6 +724,12 @@ socket.on("ready-to-call", async () => {
       });
       if (questionId) {
         appendChunkToQuestionAnswer(questionId, questionText, newText);
+        logInterviewQA("transcript-update", {
+          role: userRole,
+          questionId,
+          questionTextPreview: (questionText || "").slice(0, 60),
+          chunkPreview: (newText || "").slice(0, 120),
+        });
       }
 
       const activeQuestion = activeQuestionRef.current;
@@ -819,9 +854,10 @@ const startTest = async () => {
   setQuestionCount(1);
   setQuestionAnswers([]);
   setQuestionTranscriptMap({});
+  questionTranscriptMapRef.current = {};
   setAskedQuestions([]);
   trackAskedQuestion(firstQuestion);
-  setCurrentQuestionTranscript(firstQuestionId ? (questionTranscriptMap[String(firstQuestionId)] || "") : "");
+  setCurrentQuestionTranscript("");
 
 
   // 🔥 SEND TO CANDIDATE
@@ -1074,6 +1110,11 @@ const toggleTranscription = async () => {
           });
 
           if (socket && roomId && newTranscript.length > 2 && chunkQuestionId) {
+            logInterviewQA("candidate-transcript-emit", {
+              questionId: chunkQuestionId,
+              segmentQuestionText: (chunkQuestionText || "").slice(0, 60),
+              chunkPreview: newTranscript.slice(0, 120),
+            });
             socket.emit("transcript-update", {
               roomId,
               transcript: newTranscript,
@@ -1359,11 +1400,11 @@ useEffect(() => {
       const currentQuestionId = getQuestionId(currentQuestion);
       // Save current question's answer before switching (interviewer side)
       const currentAnswer = currentQuestionId
-        ? (questionTranscriptMap[String(currentQuestionId)] || currentQuestionTranscript || "").trim()
+        ? (questionTranscriptMapRef.current[String(currentQuestionId)] || currentQuestionTranscript || "").trim()
         : "";
       if (currentQuestionId && currentAnswer) {
         setQuestionAnswers(prev => [
-          ...prev.filter(qa => qa.questionId !== currentQuestionId),
+          ...prev.filter(qa => String(qa.questionId) !== String(currentQuestionId)),
           {
             questionId: currentQuestionId,
             questionText: getQuestionText(currentQuestion),
@@ -1377,7 +1418,7 @@ useEffect(() => {
       setCurrentQuestion(questions[newIndex]);
       trackAskedQuestion(questions[newIndex]);
       const nextQuestionId = getQuestionId(questions[newIndex]);
-      setCurrentQuestionTranscript(nextQuestionId ? (questionTranscriptMap[String(nextQuestionId)] || "") : "");
+      setCurrentQuestionTranscript(nextQuestionId ? (questionTranscriptMapRef.current[String(nextQuestionId)] || "") : "");
       setPlagiarismScore(null);
       setPlagiarismDetails(null);
       
@@ -1410,11 +1451,11 @@ useEffect(() => {
       const currentQuestionId = getQuestionId(currentQuestion);
       // Save current question's answer before switching (interviewer side)
       const currentAnswer = currentQuestionId
-        ? (questionTranscriptMap[String(currentQuestionId)] || currentQuestionTranscript || "").trim()
+        ? (questionTranscriptMapRef.current[String(currentQuestionId)] || currentQuestionTranscript || "").trim()
         : "";
       if (currentQuestionId && currentAnswer) {
         setQuestionAnswers(prev => [
-          ...prev.filter(qa => qa.questionId !== currentQuestionId),
+          ...prev.filter(qa => String(qa.questionId) !== String(currentQuestionId)),
           {
             questionId: currentQuestionId,
             questionText: getQuestionText(currentQuestion),
@@ -1428,7 +1469,7 @@ useEffect(() => {
       setCurrentQuestion(questions[newIndex]);
       trackAskedQuestion(questions[newIndex]);
       const nextQuestionId = getQuestionId(questions[newIndex]);
-      setCurrentQuestionTranscript(nextQuestionId ? (questionTranscriptMap[String(nextQuestionId)] || "") : "");
+      setCurrentQuestionTranscript(nextQuestionId ? (questionTranscriptMapRef.current[String(nextQuestionId)] || "") : "");
       setPlagiarismScore(null);
       setPlagiarismDetails(null);
 
@@ -1480,12 +1521,21 @@ useEffect(() => {
     const merged = baseQuestions.map((q) => {
       const key = normKey(q.questionId);
       const answerEntry = key ? byQuestion.get(key) : null;
-      const mapAnswer = key ? (questionTranscriptMap[key] || "") : "";
+      const mapAnswer = key ? (questionTranscriptMapRef.current[key] || "") : "";
       return {
         questionId: q.questionId,
         questionText: q.questionText || answerEntry?.questionText || "",
         answer: (mapAnswer || answerEntry?.answer || "").trim(),
       };
+    });
+
+    logInterviewQA("buildQuestionAnswerPayload", {
+      askedOrder: baseQuestions.map((q) => normKey(q.questionId)),
+      rows: merged.map((m) => ({
+        id: normKey(m.questionId),
+        answerLen: (m.answer || "").length,
+        answerPreview: (m.answer || "").slice(0, 100),
+      })),
     });
 
     return merged
