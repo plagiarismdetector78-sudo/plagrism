@@ -20,8 +20,12 @@ export default function MeetingPage() {
   const chunkStopTimerRef = useRef(null);
   /** Question id/text for the audio segment currently being recorded (set at segment start). */
   const recordingChunkQuestionRef = useRef({ id: null, text: "" });
-  /** Candidate: next segment should tag this question (from socket) so we do not race activeQuestionRef updates. */
-  const pendingRecordingQuestionRef = useRef(null);
+  /**
+   * Candidate: last question payload from `question-asked` (interviewer broadcast).
+   * Used for every new MediaRecorder segment so timer-only restarts match the question on screen,
+   * and the first question does not depend on pending consume order vs React state.
+   */
+  const lastQuestionAskedRef = useRef(null);
 
   const audioChunksRef = useRef([]);
   const localVideoContainerRef = useRef(null);
@@ -105,21 +109,17 @@ export default function MeetingPage() {
     }
   };
 
-  const applyPendingOrActiveRecordingQuestion = () => {
-    const pending = pendingRecordingQuestionRef.current;
-    if (pending?.id) {
-      recordingChunkQuestionRef.current = {
-        id: pending.id,
-        text: pending.text || "",
-      };
-      pendingRecordingQuestionRef.current = null;
-    } else {
-      const q = activeQuestionRef.current;
-      recordingChunkQuestionRef.current = {
-        id: getQuestionId(q),
-        text: getQuestionText(q),
-      };
+  /** Snapshot for tagging the next audio segment (socket is source of truth for candidate). */
+  const resolveSegmentQuestionSnap = () => {
+    const fromSocket = lastQuestionAskedRef.current;
+    if (fromSocket?.id != null && fromSocket.id !== "") {
+      return { id: fromSocket.id, text: fromSocket.text || "" };
     }
+    const q = activeQuestionRef.current;
+    return {
+      id: getQuestionId(q),
+      text: getQuestionText(q) || "",
+    };
   };
 
   const scheduleChunkStop = (rec) => {
@@ -617,13 +617,17 @@ socket.on("ready-to-call", async () => {
       console.log("📬 Question-asked event received:", { questionId: normalizedQuestionId, previousQuestionId });
 
       if (userRole === "candidate") {
+        flushRecordingChunk();
         if (normalizedQuestionId) {
-          pendingRecordingQuestionRef.current = {
+          lastQuestionAskedRef.current = {
+            id: normalizedQuestionId,
+            text: getQuestionText(question),
+          };
+          recordingChunkQuestionRef.current = {
             id: normalizedQuestionId,
             text: getQuestionText(question),
           };
         }
-        flushRecordingChunk();
       }
       
       // Set start time on first question
@@ -678,6 +682,7 @@ socket.on("ready-to-call", async () => {
         newQuestionId,
         newQuestionPreview: getQuestionText(question).slice(0, 80),
         previousQuestionId,
+        lastAskedRefId: lastQuestionAskedRef.current?.id ?? null,
         mapKeyCount: Object.keys(questionTranscriptMapRef.current).length,
         resumedLen: resumed.length,
       });
@@ -877,7 +882,7 @@ const startTest = async () => {
     }
     mediaRecorderRef.current = null;
     setTranscriptionEnabled(false);
-
+    lastQuestionAskedRef.current = null;
 
     // Stop local stream tracks
     if (localStream) {
@@ -1051,11 +1056,9 @@ const toggleTranscription = async () => {
   const recorder = new MediaRecorder(audioStream, { mimeType });
   mediaRecorderRef.current = recorder;
   setTranscriptionEnabled(true);
-  applyPendingOrActiveRecordingQuestion();
-  const firstSegmentTag = {
-    id: recordingChunkQuestionRef.current?.id ?? null,
-    text: recordingChunkQuestionRef.current?.text || "",
-  };
+  const firstSnap = resolveSegmentQuestionSnap();
+  recordingChunkQuestionRef.current = { ...firstSnap };
+  const firstSegmentTag = { ...firstSnap };
 
   /**
    * Each MediaRecorder instance must have its own handlers with a frozen segment tag.
@@ -1151,11 +1154,9 @@ const toggleTranscription = async () => {
             const newRecorder = new MediaRecorder(audioStreamRestart, { mimeType: mime });
             mediaRecorderRef.current = newRecorder;
 
-            applyPendingOrActiveRecordingQuestion();
-            const nextSegmentTag = {
-              id: recordingChunkQuestionRef.current?.id ?? null,
-              text: recordingChunkQuestionRef.current?.text || "",
-            };
+            const nextSnap = resolveSegmentQuestionSnap();
+            recordingChunkQuestionRef.current = { ...nextSnap };
+            const nextSegmentTag = { ...nextSnap };
             attachRecorderHandlersForSegment(newRecorder, nextSegmentTag, mime);
 
             try {
