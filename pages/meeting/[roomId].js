@@ -61,6 +61,12 @@ export default function MeetingPage() {
   const lockedCategory = FIXED_CATEGORIES.includes(scheduledInterview?.position)
     ? scheduledInterview.position
     : null;
+
+  const getQuestionId = (question) =>
+    question?.id ?? question?.Id ?? question?.questionId ?? question?.questionid ?? null;
+
+  const getQuestionText = (question) =>
+    question?.questiontext ?? question?.questionText ?? question?.question ?? "";
   
   // Sign language detection state
   const [signLanguageEnabled, setSignLanguageEnabled] = useState(false);
@@ -480,7 +486,8 @@ socket.on("ready-to-call", async () => {
 
     // Socket event handlers for questions and plagiarism
     socket.on("question-asked", ({ question, previousQuestionId, previousQuestionText }) => {
-      console.log("📬 Question-asked event received:", { questionId: question?.id, previousQuestionId });
+      const normalizedQuestionId = getQuestionId(question);
+      console.log("📬 Question-asked event received:", { questionId: normalizedQuestionId, previousQuestionId });
       
       // Set start time on first question
       setInterviewStartTime(prev => {
@@ -492,11 +499,16 @@ socket.on("ready-to-call", async () => {
         return prev;
       });
       
-      setQuestionCount(prev => {
-        const newCount = prev + 1;
-        console.log('📊 Question count:', newCount);
-        return newCount;
-      });
+      if (normalizedQuestionId) {
+        setQuestionCount((prev) => {
+          const existingQuestionIds = new Set([
+            ...questionAnswers.map((qa) => qa.questionId),
+            getQuestionId(currentQuestion),
+          ].filter(Boolean));
+          if (existingQuestionIds.has(normalizedQuestionId)) return prev;
+          return prev + 1;
+        });
+      }
       
       // Save previous question's answer before switching (for both users)
       if (previousQuestionId) {
@@ -505,7 +517,7 @@ socket.on("ready-to-call", async () => {
             console.log("💾 Saving answer for question", previousQuestionId, ":", prev.substring(0, 50) + "...");
             setQuestionAnswers(answers => [
               ...answers.filter(qa => qa.questionId !== previousQuestionId),
-              { questionId: previousQuestionId, questionText: previousQuestionText, answer: prev.trim() }
+              { questionId: previousQuestionId, questionText: previousQuestionText || "", answer: prev.trim() }
             ]);
           }
           console.log("🧹 Clearing currentQuestionTranscript for new question");
@@ -524,12 +536,8 @@ socket.on("ready-to-call", async () => {
       // Interviewer receives candidate answer for the active question
       if (userRole === 'interviewer' && questionId) {
         setQuestionAnswers(prev => {
-          const currentQuestionText =
-            questions.find(q => q.id === questionId)?.questiontext ||
-            questions.find(q => q.id === questionId)?.question ||
-            currentQuestion?.questiontext ||
-            currentQuestion?.question ||
-            "";
+          const matchedQuestion = questions.find((q) => String(getQuestionId(q)) === String(questionId));
+          const currentQuestionText = getQuestionText(matchedQuestion) || getQuestionText(currentQuestion) || "";
 
           return [
             ...prev.filter(qa => qa.questionId !== questionId),
@@ -671,6 +679,9 @@ const startTest = async () => {
 
   const firstQuestion = loadedQuestions[0];
   setCurrentQuestion(firstQuestion);
+  setQuestionCount(1);
+  setQuestionAnswers([]);
+  setCurrentQuestionTranscript("");
 
 
   // 🔥 SEND TO CANDIDATE
@@ -1186,13 +1197,14 @@ useEffect(() => {
   // Navigate to next question
   const nextQuestion = () => {
     if (currentQuestionIndex < questions.length - 1) {
+      const currentQuestionId = getQuestionId(currentQuestion);
       // Save current question's answer before switching (interviewer side)
-      if (currentQuestion && currentQuestionTranscript.trim()) {
+      if (currentQuestionId && currentQuestionTranscript.trim()) {
         setQuestionAnswers(prev => [
-          ...prev.filter(qa => qa.questionId !== currentQuestion.id),
+          ...prev.filter(qa => qa.questionId !== currentQuestionId),
           {
-            questionId: currentQuestion.id,
-            questionText: currentQuestion.questiontext || currentQuestion.question,
+            questionId: currentQuestionId,
+            questionText: getQuestionText(currentQuestion),
             answer: currentQuestionTranscript.trim()
           }
         ]);
@@ -1215,20 +1227,14 @@ useEffect(() => {
           }
           return prev;
         });
-        
-        setQuestionCount(prev => {
-          const newCount = prev + 1;
-          console.log('📊 Question count incremented to:', newCount);
-          return newCount;
-        });
       }
 
       if (socket && userRole === 'interviewer') {
         socket.emit('question-asked', {
           roomId,
           question: questions[newIndex],
-          previousQuestionId: currentQuestion?.id,
-          previousQuestionText: currentQuestion?.questiontext || currentQuestion?.question
+          previousQuestionId: currentQuestionId,
+          previousQuestionText: getQuestionText(currentQuestion)
         });
       }
     }
@@ -1237,13 +1243,14 @@ useEffect(() => {
   // Navigate to previous question
   const previousQuestion = () => {
     if (currentQuestionIndex > 0) {
+      const currentQuestionId = getQuestionId(currentQuestion);
       // Save current question's answer before switching (interviewer side)
-      if (currentQuestion && currentQuestionTranscript.trim()) {
+      if (currentQuestionId && currentQuestionTranscript.trim()) {
         setQuestionAnswers(prev => [
-          ...prev.filter(qa => qa.questionId !== currentQuestion.id),
+          ...prev.filter(qa => qa.questionId !== currentQuestionId),
           {
-            questionId: currentQuestion.id,
-            questionText: currentQuestion.questiontext || currentQuestion.question,
+            questionId: currentQuestionId,
+            questionText: getQuestionText(currentQuestion),
             answer: currentQuestionTranscript.trim()
           }
         ]);
@@ -1260,8 +1267,8 @@ useEffect(() => {
         socket.emit('question-asked', {
           roomId,
           question: questions[newIndex],
-          previousQuestionId: currentQuestion?.id,
-          previousQuestionText: currentQuestion?.questiontext || currentQuestion?.question
+          previousQuestionId: currentQuestionId,
+          previousQuestionText: getQuestionText(currentQuestion)
         });
       }
     }
@@ -1271,12 +1278,12 @@ useEffect(() => {
     const compiled = [...questionAnswers];
 
     // Always include latest active question answer before generating report
-    if (currentQuestion?.id && currentQuestionTranscript?.trim()) {
-      const activeQuestionText =
-        currentQuestion.questiontext || currentQuestion.question || "";
+    const activeQuestionId = getQuestionId(currentQuestion);
+    if (activeQuestionId && currentQuestionTranscript?.trim()) {
+      const activeQuestionText = getQuestionText(currentQuestion);
 
       compiled.push({
-        questionId: currentQuestion.id,
+        questionId: activeQuestionId,
         questionText: activeQuestionText,
         answer: currentQuestionTranscript.trim()
       });
@@ -1296,9 +1303,16 @@ useEffect(() => {
       }
     });
 
-    return [...byQuestion.values()].filter(
-      (item) => item.answer && item.answer.length > 0
-    );
+    return [...byQuestion.values()]
+      .filter((item) => item.questionId && item.answer && item.answer.length > 0)
+      .sort((a, b) => {
+        const indexA = questions.findIndex((q) => String(getQuestionId(q)) === String(a.questionId));
+        const indexB = questions.findIndex((q) => String(getQuestionId(q)) === String(b.questionId));
+        if (indexA === -1 && indexB === -1) return 0;
+        if (indexA === -1) return 1;
+        if (indexB === -1) return -1;
+        return indexA - indexB;
+      });
   };
 
   const evaluateQuestionWiseAnswers = async (answersByQuestion) => {
@@ -1411,7 +1425,7 @@ useEffect(() => {
         if (socket) {
           socket.emit('plagiarism-result', {
             roomId,
-            questionId: currentQuestion?.id || 1,
+            questionId: getQuestionId(currentQuestion) || null,
             score: overallScore,
             interpretation: overallInterpretation
           });
@@ -1527,7 +1541,7 @@ useEffect(() => {
     if (socket && currentQuestionTranscript) {
       socket.emit('answer-submitted', {
         roomId,
-        questionId: currentQuestion?.id || 1,
+        questionId: getQuestionId(currentQuestion),
         transcript: currentQuestionTranscript.trim()
       });
     }
