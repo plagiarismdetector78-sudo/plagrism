@@ -20,6 +20,8 @@ export default function MeetingPage() {
   const chunkStopTimerRef = useRef(null);
   /** Question id/text for the audio segment currently being recorded (set at segment start). */
   const recordingChunkQuestionRef = useRef({ id: null, text: "" });
+  /** One-shot tag override for chunks flushed via requestData at question/report boundary. */
+  const flushChunkTagRef = useRef(null);
   /**
    * Candidate: last question payload from `question-asked` (interviewer broadcast).
    * Used for every new MediaRecorder segment so timer-only restarts match the question on screen,
@@ -132,12 +134,17 @@ export default function MeetingPage() {
     }, RECORDING_CHUNK_MS);
   };
 
-  /** End current WebM segment early so transcription attributes to the question active when the segment started. */
+  /** Flush current buffered audio without ending transcription session. */
   const flushRecordingChunk = () => {
-    clearChunkStopTimer();
     const r = mediaRecorderRef.current;
     if (r && r.state === "recording") {
-      r.stop();
+      try {
+        flushChunkTagRef.current = { ...recordingChunkQuestionRef.current };
+        r.requestData();
+      } catch (err) {
+        console.warn("⚠️ requestData failed, falling back to stop/restart:", err?.message || err);
+        r.stop();
+      }
     }
   };
 
@@ -749,6 +756,11 @@ socket.on("ready-to-call", async () => {
         return merged;
       });
     });
+    socket.on("force-transcription-flush", ({ reason }) => {
+      if (userRole !== "candidate") return;
+      logInterviewQA("force-transcription-flush", { reason: reason || "unspecified" });
+      flushRecordingChunk();
+    });
 
 
     // Set initial position for local video
@@ -775,6 +787,7 @@ socket.on("ready-to-call", async () => {
     socket.off("answer-submitted");
     socket.off("plagiarism-result");
     socket.off("transcript-update");
+    socket.off("force-transcription-flush");
   }
       cleanupMedia();
     };
@@ -1031,7 +1044,7 @@ const toggleTranscription = async () => {
 
   // 🛑 STOP transcription
   if (mediaRecorderRef.current) {
-    clearChunkStopTimer();
+    flushRecordingChunk();
     mediaRecorderRef.current.stop();
     mediaRecorderRef.current = null;
     setTranscriptionEnabled(false);
@@ -1058,132 +1071,80 @@ const toggleTranscription = async () => {
   setTranscriptionEnabled(true);
   const firstSnap = resolveSegmentQuestionSnap();
   recordingChunkQuestionRef.current = { ...firstSnap };
-  const firstSegmentTag = { ...firstSnap };
 
-  /**
-   * Each MediaRecorder instance must have its own handlers with a frozen segment tag.
-   * Reusing one ondataavailable across recorders caused late blobs to read the *next*
-   * segment's question from recordingChunkQuestionRef (answers shifted by one in reports).
-   */
-  const attachRecorderHandlersForSegment = (rec, segmentTagFrozen, mime) => {
-    const segment = { id: segmentTagFrozen.id, text: segmentTagFrozen.text || "" };
+  recorder.ondataavailable = async (e) => {
+    if (!e.data || e.data.size === 0) {
+      console.log("⚠️ Audio chunk is empty, skipping");
+      return;
+    }
 
-    rec.ondataavailable = async (e) => {
-      if (!e.data || e.data.size === 0) {
-        console.log("⚠️ Audio chunk is empty, skipping");
-        return;
-      }
+    console.log("🎤 Audio chunk received, size:", e.data.size, "bytes");
+    const forcedTag = flushChunkTagRef.current;
+    if (forcedTag) {
+      flushChunkTagRef.current = null;
+    }
+    const chunkQuestionId = forcedTag?.id ?? recordingChunkQuestionRef.current?.id ?? null;
+    const chunkQuestionText = forcedTag?.text ?? recordingChunkQuestionRef.current?.text ?? "";
 
-      console.log("🎤 Audio chunk received, size:", e.data.size, "bytes");
-      const chunkTag = segment;
+    const formData = new FormData();
+    formData.append("file", e.data, "chunk.webm");
 
-      const formData = new FormData();
-      formData.append("file", e.data, "chunk.webm");
+    try {
+      const res = await fetch("/api/transcribe-realtime", {
+        method: "POST",
+        body: formData,
+      });
 
-      try {
-        const res = await fetch("/api/transcribe-realtime", {
-          method: "POST",
-          body: formData,
+      const data = await res.json();
+      console.log("📡 API Response:", data);
+
+      if (data.error) {
+        console.warn("⚠️ Transcription API error:", data.errorMessage);
+      } else if (data.skipped) {
+        console.log("⚠️ Chunk skipped:", data.reason);
+      } else if (data.text && data.text.trim().length > 0) {
+        const newTranscript = data.text.trim();
+        setFullTranscript((prev) => (prev ? `${prev} ${newTranscript}` : newTranscript).trim());
+
+        if (chunkQuestionId) {
+          appendChunkToQuestionAnswer(chunkQuestionId, chunkQuestionText, newTranscript);
+        }
+
+        setCurrentQuestionTranscript((prev) => {
+          const activeId = getQuestionId(activeQuestionRef.current);
+          if (chunkQuestionId && String(chunkQuestionId) !== String(activeId)) return prev;
+          return prev ? `${prev.trim()} ${newTranscript}`.trim() : newTranscript;
         });
 
-        const data = await res.json();
-        console.log("📡 API Response:", data);
-
-        if (data.error) {
-          console.warn("⚠️ Transcription API error:", data.errorMessage);
-          console.log("Skipping this chunk and continuing...");
-        } else if (data.skipped) {
-          console.log("⚠️ Chunk skipped:", data.reason);
-        } else if (data.text && data.text.trim().length > 0) {
-          console.log("📝 Transcript:", data.text);
-          const newTranscript = data.text.trim();
-          const chunkQuestionId = chunkTag.id;
-          const chunkQuestionText = chunkTag.text;
-
-          setFullTranscript((prev) => (prev ? `${prev} ${newTranscript}` : newTranscript).trim());
-          if (chunkQuestionId) {
-            appendChunkToQuestionAnswer(chunkQuestionId, chunkQuestionText, newTranscript);
-          }
-          setCurrentQuestionTranscript((prev) => {
-            const activeId = getQuestionId(activeQuestionRef.current);
-            if (chunkQuestionId && String(chunkQuestionId) !== String(activeId)) {
-              return prev;
-            }
-            return prev ? `${prev.trim()} ${newTranscript}`.trim() : newTranscript;
+        if (socket && roomId && newTranscript.length > 2 && chunkQuestionId) {
+          logInterviewQA("candidate-transcript-emit", {
+            questionId: chunkQuestionId,
+            segmentQuestionText: (chunkQuestionText || "").slice(0, 60),
+            chunkPreview: newTranscript.slice(0, 120),
           });
-
-          if (socket && roomId && newTranscript.length > 2 && chunkQuestionId) {
-            logInterviewQA("candidate-transcript-emit", {
-              questionId: chunkQuestionId,
-              segmentQuestionText: (chunkQuestionText || "").slice(0, 60),
-              chunkPreview: newTranscript.slice(0, 120),
-            });
-            socket.emit("transcript-update", {
-              roomId,
-              transcript: newTranscript,
-              timestamp: Date.now(),
-              questionId: chunkQuestionId,
-              questionText: chunkQuestionText,
-            });
-            console.log("📤 Sent transcript to interviewer:", newTranscript);
-          }
-        } else {
-          console.log("⚠️ Empty transcript (probably silence), continuing...");
+          socket.emit("transcript-update", {
+            roomId,
+            transcript: newTranscript,
+            timestamp: Date.now(),
+            questionId: chunkQuestionId,
+            questionText: chunkQuestionText,
+          });
         }
-      } catch (err) {
-        console.error("❌ Transcription error:", err);
-        console.log("Continuing despite error...");
       }
-    };
-
-    rec.onstop = () => {
-      console.log("🔄 Recorder stopped, checking if should restart...");
-
-      if (mediaRecorderRef.current) {
-        setTimeout(() => {
-          if (!localStream) {
-            console.log("❌ No local stream, cannot restart");
-            return;
-          }
-
-          const audioTracksRestart = localStream.getAudioTracks();
-          if (audioTracksRestart.length > 0 && audioTracksRestart[0].enabled) {
-            console.log("🔄 Restarting recorder for next chunk...");
-
-            const audioStreamRestart = new MediaStream([audioTracksRestart[0]]);
-            const newRecorder = new MediaRecorder(audioStreamRestart, { mimeType: mime });
-            mediaRecorderRef.current = newRecorder;
-
-            const nextSnap = resolveSegmentQuestionSnap();
-            recordingChunkQuestionRef.current = { ...nextSnap };
-            const nextSegmentTag = { ...nextSnap };
-            attachRecorderHandlersForSegment(newRecorder, nextSegmentTag, mime);
-
-            try {
-              newRecorder.start();
-              scheduleChunkStop(newRecorder);
-              console.log("✅ Recorder restarted for next chunk");
-            } catch (err) {
-              console.error("❌ Failed to restart recorder:", err);
-            }
-          } else {
-            console.log("❌ Audio tracks not available or disabled");
-          }
-        }, 100);
-      } else {
-        console.log("❌ Recorder ref cleared, user stopped recording");
-      }
-    };
+    } catch (err) {
+      console.error("❌ Transcription error:", err);
+    }
   };
 
-  attachRecorderHandlersForSegment(recorder, firstSegmentTag, mimeType);
+  recorder.onstop = () => {
+    console.log("🛑 Recorder stopped");
+  };
 
   try {
-    recorder.start();
-    scheduleChunkStop(recorder);
-    console.log("🎙 Recorder started:", mimeType);
+    // Continuous recording; MediaRecorder emits chunks every RECORDING_CHUNK_MS.
+    recorder.start(RECORDING_CHUNK_MS);
+    console.log("🎙 Recorder started (continuous):", mimeType, RECORDING_CHUNK_MS);
   } catch (err) {
-    clearChunkStopTimer();
     mediaRecorderRef.current = null;
     setTranscriptionEnabled(false);
     console.error("❌ MediaRecorder start failed", err);
@@ -1613,6 +1574,14 @@ useEffect(() => {
 
   // Generate question-wise interview report
   const checkPlagiarism = async () => {
+    if (socket && userRole === "interviewer") {
+      socket.emit("force-transcription-flush", {
+        roomId,
+        reason: "report_generation",
+      });
+    }
+    await new Promise((resolve) => setTimeout(resolve, 350));
+
     const answersByQuestion = buildQuestionAnswerPayload();
 
     if (!answersByQuestion.length) {
