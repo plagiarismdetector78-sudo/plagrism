@@ -13,6 +13,23 @@ const groq = new Groq({
   apiKey: process.env.GROQ_API_KEY,
 });
 
+function normalizeTranscription(rawText = "") {
+  let text = String(rawText).trim();
+  if (!text) return "";
+
+  // Remove repeated whitespace and duplicate punctuation.
+  text = text.replace(/\s+/g, " ").replace(/[.]{2,}/g, ".");
+
+  // Skip pure filler/hallucination chunks.
+  const fillerOnly = /^(thank you|thanks|thankyou|okay|ok|hmm|um|uh|you know|right)[.!?,\s]*$/i;
+  if (fillerOnly.test(text)) return "";
+
+  // Remove trailing courtesy fillers often hallucinated by ASR.
+  text = text.replace(/(?:\s*(thank you|thanks|thankyou)[.!?,\s]*)+$/i, "").trim();
+
+  return text;
+}
+
 export default function handler(req, res) {
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Method not allowed" });
@@ -83,7 +100,7 @@ export default function handler(req, res) {
       // 🧹 Cleanup temp file
       fs.unlink(filePath, () => {});
 
-      const text = transcription.text?.trim() || "";
+      const text = normalizeTranscription(transcription.text || "");
       console.log("✅ Transcription result:", text || "(empty)");
       
       return res.status(200).json({

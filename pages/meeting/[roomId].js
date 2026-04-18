@@ -16,6 +16,7 @@ export default function MeetingPage() {
   const pcRef = useRef(null);
   const mediaRecorderRef = useRef(null);
   const transcriptionIntervalRef = useRef(null);
+  const activeQuestionRef = useRef(null);
 
   const audioChunksRef = useRef([]);
   const localVideoContainerRef = useRef(null);
@@ -69,6 +70,10 @@ export default function MeetingPage() {
 
   const getQuestionText = (question) =>
     question?.questiontext ?? question?.questionText ?? question?.question ?? "";
+
+  useEffect(() => {
+    activeQuestionRef.current = currentQuestion;
+  }, [currentQuestion]);
 
   const appendChunkToQuestionAnswer = (questionId, questionText, chunkText) => {
     if (!questionId || !chunkText?.trim()) return;
@@ -964,8 +969,9 @@ const toggleTranscription = async () => {
         
         // 🔥 SEND TRANSCRIPT TO INTERVIEWER VIA SOCKET (real-time)
         if (socket && roomId && newTranscript.length > 2) {
-          const activeQuestionId = getQuestionId(currentQuestion);
-          const activeQuestionText = getQuestionText(currentQuestion);
+          const activeQuestion = activeQuestionRef.current;
+          const activeQuestionId = getQuestionId(activeQuestion);
+          const activeQuestionText = getQuestionText(activeQuestion);
           socket.emit("transcript-update", {
             roomId,
             transcript: newTranscript,
