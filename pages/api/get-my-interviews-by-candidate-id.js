@@ -32,6 +32,7 @@ export default async function handler(req, res) {
         si.position,
         si.interview_type,
         si.duration,
+        si.interviewer_feedback,
         si.interviewer_id,
         u.email as interviewer_email,
         COALESCE(p.full_name, u.email, 'Interviewer') as interviewer
@@ -44,9 +45,30 @@ export default async function handler(req, res) {
       [userId]
     );
 
+    const interviews = result.rows.map((row) => {
+      let decision = null;
+      let decisionNote = null;
+
+      if (row.interviewer_feedback) {
+        const normalized = String(row.interviewer_feedback).toLowerCase();
+        if (normalized.includes('decision: pass') || normalized.includes('pass')) {
+          decision = 'pass';
+        } else if (normalized.includes('decision: fail') || normalized.includes('fail')) {
+          decision = 'fail';
+        }
+        decisionNote = row.interviewer_feedback;
+      }
+
+      return {
+        ...row,
+        interviewer_decision: decision,
+        interviewer_decision_note: decisionNote,
+      };
+    });
+
     return res.status(200).json({
       success: true,
-      interviews: result.rows,
+      interviews,
     });
   } catch (error) {
     console.error("❌ get-my-interviews-by-candidate-id ERROR:", error);

@@ -19,16 +19,20 @@ export default function QuestionPanel({
     onCheckPlagiarism,
     onLoadQuestions,
     onCategoryChange,
+    availableCategories,
+    lockCategorySelection,
     showPanel,
     onTogglePanel
 }) {
-    const categories = [
+    const defaultCategories = [
         'Computer Science',
         'Software Engineering',
-        'Cyber Security',
-        'Data Science',
-        'Web Development'
+        'Cyber Security'
     ];
+    const categories =
+        Array.isArray(availableCategories) && availableCategories.length > 0
+            ? availableCategories
+            : defaultCategories;
 
     const transcriptRef = useRef(null);
 
@@ -68,11 +72,14 @@ export default function QuestionPanel({
                                         {categories.map(cat => (
                                             <button
                                                 key={cat}
-                                                onClick={() => onCategoryChange(cat)}
+                                                onClick={() => !lockCategorySelection && onCategoryChange(cat)}
+                                                disabled={lockCategorySelection}
                                                 className={`w-full text-left px-5 py-3.5 rounded-xl text-sm transition-all duration-300 flex items-center justify-between group relative overflow-hidden ${
                                                     questionCategory === cat
                                                         ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-lg shadow-purple-900/30 scale-[1.02]'
-                                                        : 'text-gray-400 hover:bg-white/10 hover:text-white hover:scale-[1.01] border border-white/5'
+                                                        : lockCategorySelection
+                                                            ? 'text-gray-500 border border-white/5 cursor-not-allowed'
+                                                            : 'text-gray-400 hover:bg-white/10 hover:text-white hover:scale-[1.01] border border-white/5'
                                                 }`}
                                             >
                                                 <span className="relative z-10 font-semibold flex items-center space-x-2">

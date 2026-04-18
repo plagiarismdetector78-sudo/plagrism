@@ -24,6 +24,7 @@ const CandidateDashboard = () => {
   const [fullName, setFullName] = useState('Candidate');
   const [showMeetingModal, setShowMeetingModal] = useState(false);
   const [meetingRoomId, setMeetingRoomId] = useState('');
+  const [selectedDecisionInterview, setSelectedDecisionInterview] = useState(null);
   const [isMobile, setIsMobile] = useState(false);
   const [activeTab, setActiveTab] = useState('upcoming');
 
@@ -53,6 +54,8 @@ const { data, error, mutate } = useSWR(
   meetingRoomId: i.meeting_room_id,
 }));
 
+  const normalizeStatus = (status) => String(status || '').toLowerCase();
+
   // Auto-update expired interviews when data loads
   useEffect(() => {
     if (interviews.length > 0) {
@@ -78,12 +81,12 @@ const { data, error, mutate } = useSWR(
                scheduledDate >= today && 
                scheduledDate < tomorrow && 
                scheduledDate > now &&
-               interview.status !== 'cancelled' &&
-               interview.status !== 'completed';
+               normalizeStatus(interview.status) !== 'cancelled' &&
+               normalizeStatus(interview.status) !== 'completed';
       case 'completed':
-        return interview.status === 'completed';
+        return normalizeStatus(interview.status) === 'completed';
       case 'cancelled':
-        return interview.status === 'cancelled';
+        return normalizeStatus(interview.status) === 'cancelled';
       case 'all':
       default:
         return true;
@@ -205,23 +208,32 @@ const fetchProfile = async (uid) => {
   };
 
   const getStatusColor = (status, scheduledAt) => {
+    const normalized = normalizeStatus(status);
     if (!scheduledAt) return 'bg-yellow-500/20 text-yellow-300 border-yellow-500/30';
     const scheduledDate = new Date(scheduledAt);
     const now = new Date();
+    if (normalized === 'completed') return 'bg-green-500/20 text-green-300 border-green-500/30';
+    if (normalized === 'cancelled') return 'bg-red-500/20 text-red-300 border-red-500/30';
     if (scheduledDate > now) return 'bg-blue-500/20 text-blue-300 border-blue-500/30';
-    if (status === 'completed') return 'bg-green-500/20 text-green-300 border-green-500/30';
-    if (status === 'cancelled') return 'bg-red-500/20 text-red-300 border-red-500/30';
     return 'bg-yellow-500/20 text-yellow-300 border-yellow-500/30';
   };
 
   const getStatusText = (status, scheduledAt) => {
+    const normalized = normalizeStatus(status);
     if (!scheduledAt) return 'Pending';
     const scheduledDate = new Date(scheduledAt);
     const now = new Date();
+    if (normalized === 'completed') return 'Completed';
+    if (normalized === 'cancelled') return 'Cancelled';
     if (scheduledDate > now) return 'Scheduled';
-    if (status === 'completed') return 'Completed';
-    if (status === 'cancelled') return 'Cancelled';
     return 'Pending';
+  };
+
+  const getDecisionNote = (interview) => {
+    const text = interview?.interviewer_decision_note || interview?.interviewer_feedback || '';
+    if (!text) return '';
+    const match = text.match(/note:\s*([\s\S]*)/i);
+    return match?.[1]?.trim() || text;
   };
   
   const updateExpiredInterviews = async () => {
@@ -229,7 +241,8 @@ const fetchProfile = async (uid) => {
     
     const now = new Date();
     const expiredInterviews = interviews.filter(interview => {
-      if (!interview.scheduledAt || interview.status === 'completed' || interview.status === 'cancelled' || interview.status === 'pending') return false;
+      const status = normalizeStatus(interview.status);
+      if (!interview.scheduledAt || status === 'completed' || status === 'cancelled' || status === 'pending') return false;
       const scheduledDate = new Date(interview.scheduledAt);
       const duration = interview.duration || 60;
       const endTime = new Date(scheduledDate.getTime() + duration * 60000);
@@ -268,10 +281,10 @@ const fetchProfile = async (uid) => {
   const stats = {
   total: normalizedInterviews.length,
   upcoming: normalizedInterviews.filter(
-    i => i.scheduledAt && new Date(i.scheduledAt) > new Date()
+    i => i.scheduledAt && new Date(i.scheduledAt) > new Date() && !['completed', 'cancelled'].includes(normalizeStatus(i.status))
   ).length,
-  completed: normalizedInterviews.filter(i => i.status === 'completed').length,
-  cancelled: normalizedInterviews.filter(i => i.status === 'cancelled').length,
+  completed: normalizedInterviews.filter(i => normalizeStatus(i.status) === 'completed').length,
+  cancelled: normalizedInterviews.filter(i => normalizeStatus(i.status) === 'cancelled').length,
 };
 
 
@@ -487,18 +500,39 @@ const fetchProfile = async (uid) => {
                                 <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium border ${statusColor}`}>
                                   {statusText}
                                 </span>
+                                {interview.interviewer_decision && (
+                                  <div className="mt-2">
+                                    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold ${
+                                      interview.interviewer_decision === 'pass'
+                                        ? 'bg-green-500/20 text-green-300 border border-green-500/30'
+                                        : 'bg-red-500/20 text-red-300 border border-red-500/30'
+                                    }`}>
+                                      Decision: {interview.interviewer_decision.toUpperCase()}
+                                    </span>
+                                  </div>
+                                )}
                               </td>
                               <td className="px-4 py-3">
-                                {interview.meetingRoomId ? (
-                                  <button
-                                    onClick={() => joinMeeting(interview.meetingRoomId)}
-                                    className="px-4 py-2 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-xl hover:shadow-lg transform hover:scale-105 transition-all duration-300"
-                                  >
-                                    Join Meeting
-                                  </button>
-                                ) : (
-                                  <span className="text-gray-500 text-sm">Room not ready</span>
-                                )}
+                                <div className="flex items-center gap-2">
+                                  {interview.meetingRoomId ? (
+                                    <button
+                                      onClick={() => joinMeeting(interview.meetingRoomId)}
+                                      className="px-4 py-2 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-xl hover:shadow-lg transform hover:scale-105 transition-all duration-300"
+                                    >
+                                      Join Meeting
+                                    </button>
+                                  ) : (
+                                    <span className="text-gray-500 text-sm">Room not ready</span>
+                                  )}
+                                  {interview.interviewer_decision && (
+                                    <button
+                                      onClick={() => setSelectedDecisionInterview(interview)}
+                                      className="px-3 py-2 bg-white/10 border border-white/20 text-gray-200 rounded-xl hover:bg-white/20 transition-all duration-300 text-xs font-medium"
+                                    >
+                                      Feedback
+                                    </button>
+                                  )}
+                                </div>
                               </td>
                             </tr>
                           );
@@ -550,7 +584,19 @@ const fetchProfile = async (uid) => {
                             </div>
                           </div>
 
-                          <div className="flex justify-end">
+                          {interview.interviewer_decision && (
+                            <div className="mb-3">
+                              <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold ${
+                                interview.interviewer_decision === 'pass'
+                                  ? 'bg-green-500/20 text-green-300 border border-green-500/30'
+                                  : 'bg-red-500/20 text-red-300 border border-red-500/30'
+                              }`}>
+                                Decision: {interview.interviewer_decision.toUpperCase()}
+                              </span>
+                            </div>
+                          )}
+
+                          <div className="flex justify-end gap-2">
                             {interview.meetingRoomId ? (
                               <button
                                 onClick={() => joinMeeting(interview.meetingRoomId)}
@@ -560,6 +606,14 @@ const fetchProfile = async (uid) => {
                               </button>
                             ) : (
                               <span className="text-gray-500 text-sm">Room not ready</span>
+                            )}
+                            {interview.interviewer_decision && (
+                              <button
+                                onClick={() => setSelectedDecisionInterview(interview)}
+                                className="px-3 py-2 bg-white/10 border border-white/20 text-gray-200 rounded-xl hover:bg-white/20 transition-all duration-300 text-xs font-medium"
+                              >
+                                Feedback
+                              </button>
                             )}
                           </div>
                         </div>
@@ -666,6 +720,58 @@ const fetchProfile = async (uid) => {
                 >
                   Cancel
                 </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Interview Decision Modal */}
+        {selectedDecisionInterview && (
+          <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+            <div className="backdrop-blur-xl bg-gray-800/95 rounded-3xl border border-white/10 shadow-2xl p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+              <div className="flex justify-between items-center mb-6">
+                <h3 className="text-xl font-bold text-white">Interview Decision & Feedback</h3>
+                <button
+                  onClick={() => setSelectedDecisionInterview(null)}
+                  className="text-gray-400 hover:text-white p-1 rounded-lg hover:bg-white/10 transition-colors"
+                >
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+
+              <div className="space-y-4">
+                <div className="bg-white/5 rounded-xl p-4 border border-white/10">
+                  <div className="grid grid-cols-2 gap-4 text-sm">
+                    <div>
+                      <p className="text-gray-400 mb-1">Position</p>
+                      <p className="text-white font-medium">{selectedDecisionInterview.position || 'N/A'}</p>
+                    </div>
+                    <div>
+                      <p className="text-gray-400 mb-1">Interviewer</p>
+                      <p className="text-white font-medium">{selectedDecisionInterview.interviewer || 'N/A'}</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="bg-white/5 rounded-xl p-4 border border-white/10">
+                  <p className="text-gray-400 text-sm mb-2">Final Status</p>
+                  <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-semibold ${
+                    selectedDecisionInterview.interviewer_decision === 'pass'
+                      ? 'bg-green-500/20 text-green-300 border border-green-500/30'
+                      : 'bg-red-500/20 text-red-300 border border-red-500/30'
+                  }`}>
+                    {selectedDecisionInterview.interviewer_decision?.toUpperCase()}
+                  </span>
+                </div>
+
+                <div className="bg-gradient-to-r from-purple-500/10 to-pink-500/10 border border-purple-500/30 rounded-xl p-5">
+                  <p className="text-gray-400 text-sm mb-2">Interviewer Note</p>
+                  <p className="text-gray-200 leading-relaxed whitespace-pre-wrap">
+                    {getDecisionNote(selectedDecisionInterview) || 'No note provided.'}
+                  </p>
+                </div>
               </div>
             </div>
           </div>

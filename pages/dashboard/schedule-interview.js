@@ -6,6 +6,12 @@ import Sidebar from "../../components/Sidebar";
 import Navbar from "../../components/Navbar";
 
 const ScheduleInterviewPage = () => {
+  const POSITION_OPTIONS = [
+    "Computer Science",
+    "Software Engineering",
+    "Cyber Security",
+  ];
+
   const router = useRouter();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [candidates, setCandidates] = useState([]);
@@ -16,7 +22,7 @@ const ScheduleInterviewPage = () => {
     scheduledAt: "",
     duration: 60,
     interviewType: "technical",
-    position: "Software Engineer",
+    position: "Software Engineering",
     meetingRoomId: "",
     createRoom: true,
   });
@@ -116,7 +122,7 @@ const ScheduleInterviewPage = () => {
           scheduledAt: "",
           duration: 60,
           interviewType: "technical",
-          position: "Software Engineer",
+          position: "Software Engineering",
           meetingRoomId: "",
           createRoom: true,
         });
@@ -220,17 +226,21 @@ const ScheduleInterviewPage = () => {
                   {/* Position */}
                   <div>
                     <label className="block text-white font-medium mb-2">
-                      Position
+                      Field
                     </label>
-                    <input
-                      type="text"
+                    <select
                       value={scheduleData.position}
                       onChange={(e) =>
                         setScheduleData({ ...scheduleData, position: e.target.value })
                       }
-                      placeholder="e.g., Software Engineer"
-                      className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:ring-2 focus:ring-purple-500"
-                    />
+                      className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white focus:ring-2 focus:ring-purple-500"
+                    >
+                      {POSITION_OPTIONS.map((option) => (
+                        <option key={option} value={option} className="bg-gray-900">
+                          {option}
+                        </option>
+                      ))}
+                    </select>
                   </div>
 
                   {/* Duration */}

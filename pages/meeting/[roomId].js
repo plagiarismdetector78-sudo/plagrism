@@ -57,6 +57,10 @@ export default function MeetingPage() {
   const [isVideoHidden, setIsVideoHidden] = useState(false);
   const [scheduledInterview, setScheduledInterview] = useState(null);
   const [candidateInfo, setCandidateInfo] = useState(null);
+  const FIXED_CATEGORIES = ["Computer Science", "Software Engineering", "Cyber Security"];
+  const lockedCategory = FIXED_CATEGORIES.includes(scheduledInterview?.position)
+    ? scheduledInterview.position
+    : null;
   
   // Sign language detection state
   const [signLanguageEnabled, setSignLanguageEnabled] = useState(false);
@@ -90,6 +94,14 @@ useEffect(() => {
       
       if (data.success) {
         setScheduledInterview(data.interview);
+        const allowedCategories = new Set([
+          "Computer Science",
+          "Software Engineering",
+          "Cyber Security",
+        ]);
+        if (allowedCategories.has(data.interview?.position)) {
+          setQuestionCategory(data.interview.position);
+        }
         const candidateData = {
           id: data.interview.candidate_id,
           name: data.interview.candidate_name || data.interview.full_name || 'Candidate',
@@ -509,9 +521,25 @@ socket.on("ready-to-call", async () => {
 
     socket.on("answer-submitted", ({ questionId, transcript: submittedTranscript }) => {
       console.log("Answer submitted for question:", questionId);
-      // Interviewer receives the answer
-      if (userRole === 'interviewer') {
-        setTranscript(submittedTranscript);
+      // Interviewer receives candidate answer for the active question
+      if (userRole === 'interviewer' && questionId) {
+        setQuestionAnswers(prev => {
+          const currentQuestionText =
+            questions.find(q => q.id === questionId)?.questiontext ||
+            questions.find(q => q.id === questionId)?.question ||
+            currentQuestion?.questiontext ||
+            currentQuestion?.question ||
+            "";
+
+          return [
+            ...prev.filter(qa => qa.questionId !== questionId),
+            {
+              questionId,
+              questionText: currentQuestionText,
+              answer: (submittedTranscript || "").trim()
+            }
+          ];
+        });
       }
     });
 
@@ -1239,47 +1267,153 @@ useEffect(() => {
     }
   };
 
-  // Analyze FULL INTERVIEW TRANSCRIPT
+  const buildQuestionAnswerPayload = () => {
+    const compiled = [...questionAnswers];
+
+    // Always include latest active question answer before generating report
+    if (currentQuestion?.id && currentQuestionTranscript?.trim()) {
+      const activeQuestionText =
+        currentQuestion.questiontext || currentQuestion.question || "";
+
+      compiled.push({
+        questionId: currentQuestion.id,
+        questionText: activeQuestionText,
+        answer: currentQuestionTranscript.trim()
+      });
+    }
+
+    // De-duplicate by questionId, keep latest non-empty answer
+    const byQuestion = new Map();
+    compiled.forEach((item) => {
+      if (!item?.questionId) return;
+      const existing = byQuestion.get(item.questionId);
+      if (!existing || (item.answer && item.answer.length >= existing.answer.length)) {
+        byQuestion.set(item.questionId, {
+          questionId: item.questionId,
+          questionText: item.questionText || existing?.questionText || "",
+          answer: (item.answer || "").trim()
+        });
+      }
+    });
+
+    return [...byQuestion.values()].filter(
+      (item) => item.answer && item.answer.length > 0
+    );
+  };
+
+  const evaluateQuestionWiseAnswers = async (answersByQuestion) => {
+    const evaluations = await Promise.all(
+      answersByQuestion.map(async (qa) => {
+        try {
+          const response = await fetch("/api/calculate-plagiarism", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              questionId: qa.questionId,
+              transcribedAnswer: qa.answer
+            })
+          });
+
+          const data = await response.json();
+          if (!data.success) {
+            return {
+              ...qa,
+              score: 0,
+              interpretation: data.message || "Evaluation failed",
+              details: {}
+            };
+          }
+
+          return {
+            ...qa,
+            score: data.plagiarismScore ?? 0,
+            interpretation: data.interpretation || "",
+            details: data.details || {},
+            aiDetection: data.aiDetection || data.details?.aiDetection || null
+          };
+        } catch (error) {
+          console.error("❌ Question-wise evaluation failed:", qa.questionId, error);
+          return {
+            ...qa,
+            score: 0,
+            interpretation: "Evaluation error",
+            details: {}
+          };
+        }
+      })
+    );
+
+    return evaluations;
+  };
+
+  // Generate question-wise interview report
   const checkPlagiarism = async () => {
-    if (!fullTranscript || fullTranscript.trim().length === 0) {
-      alert("No transcript available. Please wait for the candidate to speak.");
+    const answersByQuestion = buildQuestionAnswerPayload();
+
+    if (!answersByQuestion.length) {
+      alert("No question-wise answers found. Please record answers before generating report.");
       return;
     }
 
     setIsCheckingPlagiarism(true);
     try {
-      console.log('📝 Full Transcript to Analyze:', fullTranscript.substring(0, 300) + (fullTranscript.length > 300 ? '...' : ''));
-      console.log('📏 Transcript Length:', fullTranscript.length, 'characters');
-      
-      // Calculate plagiarism score for FULL TRANSCRIPT
-      const plagiarismResponse = await fetch('/api/calculate-plagiarism', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          questionId: currentQuestion?.id || 1,
-          transcribedAnswer: fullTranscript.trim()
-        })
+      console.log("📝 Generating question-wise report for", answersByQuestion.length, "answers");
+      const questionEvaluations = await evaluateQuestionWiseAnswers(answersByQuestion);
+
+      const totalScore = questionEvaluations.reduce((sum, item) => sum + (item.score || 0), 0);
+      const overallScore = questionEvaluations.length
+        ? Math.round(totalScore / questionEvaluations.length)
+        : 0;
+
+      const averageMetric = (metric) => {
+        const values = questionEvaluations
+          .map((q) => q.details?.scores?.[metric])
+          .filter((value) => typeof value === "number");
+        if (!values.length) return 0;
+        return Math.round(values.reduce((a, b) => a + b, 0) / values.length);
+      };
+
+      const aiDetections = questionEvaluations
+        .map((q) => q.aiDetection)
+        .filter(Boolean);
+      const aiGeneratedCount = aiDetections.filter((item) => item.isAIGenerated).length;
+      const averageAIConfidence = aiDetections.length
+        ? Math.round(aiDetections.reduce((sum, item) => sum + (item.confidence || 0), 0) / aiDetections.length)
+        : 0;
+
+      const overallInterpretation =
+        overallScore >= 80
+          ? "Strong answer quality across most questions."
+          : overallScore >= 60
+            ? "Good performance with some concept gaps."
+            : overallScore >= 40
+              ? "Partial understanding; needs improvement in multiple answers."
+              : "Low alignment with expected answers across questions.";
+
+      setPlagiarismScore(overallScore);
+      setPlagiarismDetails({
+        interpretation: overallInterpretation,
+        details: {
+          scores: {
+            accuracy: averageMetric("accuracy"),
+            completeness: averageMetric("completeness"),
+            understanding: averageMetric("understanding"),
+            clarity: averageMetric("clarity")
+          },
+          feedback: `Question-wise evaluation complete for ${questionEvaluations.length} answers.`,
+          strengths: [],
+          weaknesses: []
+        },
+        questionWise: questionEvaluations
       });
-
-      const plagiarismData = await plagiarismResponse.json();
-      
-      console.log('📊 Plagiarism Check Response:', JSON.stringify(plagiarismData, null, 2));
-
-      if (plagiarismData.success) {
-        setPlagiarismScore(plagiarismData.plagiarismScore);
-        setPlagiarismDetails({
-          interpretation: plagiarismData.interpretation,
-          breakdown: plagiarismData.breakdown,
-          details: plagiarismData.details
-        });
 
         // Broadcast result to interviewee
         if (socket) {
           socket.emit('plagiarism-result', {
             roomId,
             questionId: currentQuestion?.id || 1,
-            score: plagiarismData.plagiarismScore,
-            interpretation: plagiarismData.interpretation
+            score: overallScore,
+            interpretation: overallInterpretation
           });
         }
 
@@ -1310,7 +1444,21 @@ useEffect(() => {
         
         console.log('⏱️ Interview Duration:', formattedDuration, '(', durationMs, 'ms)');
         console.log('❓ Total Questions Asked:', questionCount);
-        console.log('🤖 AI Detection Data:', plagiarismData.aiDetection || plagiarismData.details?.aiDetection || 'NOT FOUND');
+        console.log("🤖 Question-wise AI detection count:", aiDetections.length);
+
+        const normalizedQuestionEvaluations = questionEvaluations.map((item) => ({
+          questionId: item.questionId,
+          questionText: item.questionText,
+          answer: item.answer,
+          score: item.score || 0,
+          interpretation: item.interpretation || "",
+          strengths: item.details?.strengths || [],
+          weaknesses: item.details?.weaknesses || [],
+          matchedConcepts: item.details?.matchedKeywords || [],
+          missedConcepts: item.details?.missedConcepts || [],
+          feedback: item.details?.feedback || "",
+          aiDetection: item.aiDetection || null
+        }));
 
         const reportPayload = {
           interviewId: interviewId || scheduledInterview?.id || `interview_${Date.now()}`,
@@ -1321,19 +1469,27 @@ useEffect(() => {
           interviewerEmail,
           candidateEmail,
           questionCategory,
-          questionsAsked: questionAnswers,
-          questionsCount: questionCount,
+          questionsAsked: normalizedQuestionEvaluations,
+          questionsCount: normalizedQuestionEvaluations.length || questionCount,
           fullTranscript: fullTranscript.trim(),
           transcribedAnswer: fullTranscript.trim(),
           evaluation: {
-            overallScore: plagiarismData.plagiarismScore,
-            ...plagiarismData.details?.scores,
-            interpretation: plagiarismData.interpretation,
-            strengths: plagiarismData.details?.strengths || [],
-            weaknesses: plagiarismData.details?.weaknesses || [],
-            matchedConcepts: plagiarismData.details?.matchedKeywords || [],
-            feedback: plagiarismData.details?.feedback || '',
-            aiDetection: plagiarismData.aiDetection || plagiarismData.details?.aiDetection || null
+            overallScore,
+            accuracy: averageMetric("accuracy"),
+            completeness: averageMetric("completeness"),
+            understanding: averageMetric("understanding"),
+            clarity: averageMetric("clarity"),
+            interpretation: overallInterpretation,
+            strengths: [],
+            weaknesses: [],
+            matchedConcepts: [],
+            feedback: `Generated from question-wise similarity analysis of ${normalizedQuestionEvaluations.length} answers.`,
+            aiDetection: {
+              questionCountAnalyzed: aiDetections.length,
+              aiGeneratedCount,
+              averageConfidence: averageAIConfidence
+            },
+            questionWiseResults: normalizedQuestionEvaluations
           },
           roomId,
           duration: formattedDuration,
@@ -1358,7 +1514,6 @@ useEffect(() => {
         } else {
           console.warn('⚠️ Failed to save report to database');
         }
-      }
     } catch (error) {
       console.error('Error checking plagiarism:', error);
       alert('Failed to analyze transcript. Please try again.');
@@ -1414,10 +1569,6 @@ useEffect(() => {
   };
 
   // Clear transcript
-  const clearTranscript = () => {
-    setTranscript("");
-  };
-
   // Get connection status color
   const getStatusColor = () => {
     switch (connectionStatus) {
@@ -1739,6 +1890,8 @@ useEffect(() => {
         onCategoryChange={(category) => {
           setQuestionCategory(category);
         }}
+        availableCategories={lockedCategory ? [lockedCategory] : FIXED_CATEGORIES}
+        lockCategorySelection={Boolean(lockedCategory)}
         showPanel={showQuestionPanel}
         onTogglePanel={() => setShowQuestionPanel(!showQuestionPanel)}
       />

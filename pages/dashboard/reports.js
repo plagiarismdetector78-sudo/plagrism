@@ -139,6 +139,8 @@ const ReportsPage = () => {
     return 'bg-red-500/20 border-red-500/50';
   };
 
+  const questionWiseResults = selectedReport?.evaluation_data?.questionWiseResults || [];
+
   return (
     <>
       <Head>
@@ -283,6 +285,22 @@ const ReportsPage = () => {
                         {selectedReport.evaluation_data?.overallScore || 0}%
                       </div>
                       <div className="text-gray-300">{selectedReport.evaluation_data?.interpretation || 'No interpretation'}</div>
+                      {selectedReport.evaluation_data?.interviewerDecision && (
+                        <div className="mt-3">
+                          <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold ${
+                            selectedReport.evaluation_data.interviewerDecision === 'pass'
+                              ? 'bg-green-500/20 text-green-300 border border-green-500/30'
+                              : 'bg-red-500/20 text-red-300 border border-red-500/30'
+                          }`}>
+                            Decision: {String(selectedReport.evaluation_data.interviewerDecision).toUpperCase()}
+                          </span>
+                          {selectedReport.evaluation_data?.interviewerDecisionNote && (
+                            <p className="text-xs text-gray-300 mt-2">
+                              {selectedReport.evaluation_data.interviewerDecisionNote}
+                            </p>
+                          )}
+                        </div>
+                      )}
                     </div>
 
                     {/* Participants */}
@@ -316,6 +334,33 @@ const ReportsPage = () => {
                       <div className="bg-white/5 rounded-xl p-4 border border-white/10">
                         <div className="text-sm font-semibold text-gray-400 mb-2">AI Feedback</div>
                         <div className="text-gray-300 text-sm">{selectedReport.evaluation_data.feedback}</div>
+                      </div>
+                    )}
+
+                    {/* Question-wise similarity */}
+                    {questionWiseResults.length > 0 && (
+                      <div className="bg-white/5 rounded-xl p-4 border border-white/10">
+                        <div className="text-sm font-semibold text-gray-400 mb-3">Question-wise Similarity</div>
+                        <div className="space-y-3 max-h-72 overflow-y-auto pr-1">
+                          {questionWiseResults.map((item, idx) => (
+                            <div key={`${item.questionId}-${idx}`} className="bg-black/30 rounded-lg p-3 border border-white/10">
+                              <div className="flex items-start justify-between gap-3">
+                                <div className="text-sm text-white font-medium flex-1">
+                                  Q{idx + 1}. {item.questionText || 'Question'}
+                                </div>
+                                <div className={`text-sm font-bold ${getScoreColor(item.score || 0)}`}>
+                                  {item.score || 0}%
+                                </div>
+                              </div>
+                              <div className="text-xs text-gray-400 mt-2 line-clamp-3">
+                                {item.answer || 'No captured answer'}
+                              </div>
+                              {item.interpretation && (
+                                <div className="text-xs text-gray-300 mt-2">{item.interpretation}</div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
                       </div>
                     )}
 

@@ -6,6 +6,11 @@ import Sidebar from "../../components/Sidebar";
 import Navbar from "../../components/Navbar";
 
 function InterviewerDashboard() {
+  const POSITION_OPTIONS = [
+    "Computer Science",
+    "Software Engineering",
+    "Cyber Security",
+  ];
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [candidates, setCandidates] = useState([]);
   const [loadingCandidates, setLoadingCandidates] = useState(false);
@@ -33,7 +38,7 @@ const [scheduleModalOpen, setScheduleModalOpen] = useState(false);
 const [selectedCandidate, setSelectedCandidate] = useState(null);
 const [selectedDate, setSelectedDate] = useState("");
 const [selectedTime, setSelectedTime] = useState("");
-const [schedulePosition, setSchedulePosition] = useState("Software Engineer");
+const [schedulePosition, setSchedulePosition] = useState("Software Engineering");
 const [scheduleDuration, setScheduleDuration] = useState(60);
 const [scheduleInterviewType, setScheduleInterviewType] = useState("technical");
 
@@ -222,7 +227,7 @@ const openScheduleModal = (candidate) => {
   setSelectedCandidate(candidate);
   setSelectedDate("");
   setSelectedTime("");
-  setSchedulePosition("Software Engineer");
+  setSchedulePosition("Software Engineering");
   setScheduleDuration(60);
   setScheduleInterviewType("technical");
   setScheduleModalOpen(true);
@@ -354,7 +359,7 @@ const openEditModal = (interview) => {
     setEditTime(iso.toISOString().split("T")[1].substring(0, 5));
   }
 
-  setEditPosition(interview.position || "Software Engineer");
+  setEditPosition(interview.position || "Software Engineering");
   setEditDuration(interview.duration || 60);
   setEditInterviewType(interview.interview_type || "technical");
 
@@ -938,14 +943,18 @@ const updateInterview = async () => {
       </h2>
 
       {/* Position */}
-      <label className="text-gray-300 text-sm block">Position</label>
-      <input
-        type="text"
+      <label className="text-gray-300 text-sm block">Field</label>
+      <select
         value={editPosition}
         onChange={(e) => setEditPosition(e.target.value)}
         className="w-full mt-2 mb-3 p-3 rounded-xl bg-white/10 text-white border border-white/20 focus:ring-2 focus:ring-blue-500"
-        placeholder="e.g., Software Engineer"
-      />
+      >
+        {POSITION_OPTIONS.map((option) => (
+          <option key={option} value={option} className="bg-gray-900">
+            {option}
+          </option>
+        ))}
+      </select>
 
       <label className="text-gray-300 text-sm">Select Date</label>
       <input

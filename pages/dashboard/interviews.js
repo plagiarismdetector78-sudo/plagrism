@@ -12,6 +12,9 @@ const InterviewsPage = () => {
   const [loading, setLoading] = useState(true);
   const [activeFilter, setActiveFilter] = useState('all');
   const [searchTerm, setSearchTerm] = useState('');
+  const [selectedDecisionInterview, setSelectedDecisionInterview] = useState(null);
+
+  const normalizeStatus = (status) => String(status || '').toLowerCase();
 
   useEffect(() => {
     const savedState = localStorage.getItem('sidebarCollapsed');
@@ -53,7 +56,8 @@ const InterviewsPage = () => {
   const updateExpiredInterviews = async (interviewList = interviews) => {
     const now = new Date();
     const expiredInterviews = interviewList.filter(interview => {
-      if (!interview.scheduledAt || interview.status === 'completed' || interview.status === 'cancelled' || interview.status === 'pending') return false;
+      const status = normalizeStatus(interview.status);
+      if (!interview.scheduledAt || status === 'completed' || status === 'cancelled' || status === 'pending') return false;
       const scheduledDate = new Date(interview.scheduledAt);
       const duration = interview.duration || 60;
       const endTime = new Date(scheduledDate.getTime() + duration * 60000);
@@ -103,23 +107,32 @@ const InterviewsPage = () => {
   };
 
   const getStatusColor = (status, scheduledAt) => {
+    const normalized = normalizeStatus(status);
     if (!scheduledAt) return 'bg-yellow-500/20 text-yellow-300 border-yellow-500/30';
     const scheduledDate = new Date(scheduledAt);
     const now = new Date();
+    if (normalized === 'completed') return 'bg-green-500/20 text-green-300 border-green-500/30';
+    if (normalized === 'cancelled') return 'bg-red-500/20 text-red-300 border-red-500/30';
     if (scheduledDate > now) return 'bg-blue-500/20 text-blue-300 border-blue-500/30';
-    if (status === 'completed') return 'bg-green-500/20 text-green-300 border-green-500/30';
-    if (status === 'cancelled') return 'bg-red-500/20 text-red-300 border-red-500/30';
     return 'bg-gray-500/20 text-gray-300 border-gray-500/30';
   };
 
   const getStatusText = (status, scheduledAt) => {
+    const normalized = normalizeStatus(status);
     if (!scheduledAt) return 'Pending';
     const scheduledDate = new Date(scheduledAt);
     const now = new Date();
+    if (normalized === 'completed') return 'Completed';
+    if (normalized === 'cancelled') return 'Cancelled';
     if (scheduledDate > now) return 'Scheduled';
-    if (status === 'completed') return 'Completed';
-    if (status === 'cancelled') return 'Cancelled';
     return 'Pending';
+  };
+
+  const getDecisionNote = (interview) => {
+    const text = interview?.interviewer_decision_note || interview?.interviewer_feedback || '';
+    if (!text) return '';
+    const match = text.match(/note:\s*([\s\S]*)/i);
+    return match?.[1]?.trim() || text;
   };
 
   const joinMeeting = (roomId) => {
@@ -139,11 +152,11 @@ const InterviewsPage = () => {
     if (activeFilter === 'all') {
       matchesFilter = true;
     } else if (activeFilter === 'upcoming') {
-      matchesFilter = scheduledDate && scheduledDate > now && interview.status !== 'cancelled';
+      matchesFilter = scheduledDate && scheduledDate > now && !['cancelled', 'completed'].includes(normalizeStatus(interview.status));
     } else if (activeFilter === 'completed') {
-      matchesFilter = interview.status === 'completed';
+      matchesFilter = normalizeStatus(interview.status) === 'completed';
     } else if (activeFilter === 'past') {
-      matchesFilter = scheduledDate && scheduledDate <= now && interview.status !== 'cancelled';
+      matchesFilter = scheduledDate && scheduledDate <= now && normalizeStatus(interview.status) !== 'cancelled';
     }
     
     // Search filter
@@ -156,9 +169,9 @@ const InterviewsPage = () => {
 
   const stats = {
     total: interviews.length,
-    upcoming: interviews.filter(i => i.scheduledAt && new Date(i.scheduledAt) > new Date()).length,
-    completed: interviews.filter(i => i.status === 'completed').length,
-    past: interviews.filter(i => i.scheduledAt && new Date(i.scheduledAt) <= new Date() && i.status !== 'cancelled').length,
+    upcoming: interviews.filter(i => i.scheduledAt && new Date(i.scheduledAt) > new Date() && !['completed', 'cancelled'].includes(normalizeStatus(i.status))).length,
+    completed: interviews.filter(i => normalizeStatus(i.status) === 'completed').length,
+    past: interviews.filter(i => i.scheduledAt && new Date(i.scheduledAt) <= new Date() && normalizeStatus(i.status) !== 'cancelled').length,
   };
 
   return (
@@ -343,6 +356,17 @@ const InterviewsPage = () => {
                                 <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${statusColor}`}>
                                   {statusText}
                                 </span>
+                                {interview.interviewer_decision && (
+                                  <div className="mt-2">
+                                    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold ${
+                                      interview.interviewer_decision === 'pass'
+                                        ? 'bg-green-500/20 text-green-300 border border-green-500/30'
+                                        : 'bg-red-500/20 text-red-300 border border-red-500/30'
+                                    }`}>
+                                      Decision: {String(interview.interviewer_decision).toUpperCase()}
+                                    </span>
+                                  </div>
+                                )}
                               </td>
                               <td className="px-4 py-3">
                                 <div className="flex space-x-2">
@@ -358,7 +382,7 @@ const InterviewsPage = () => {
                                     </button>
                                   )}
                                   <button
-                                    onClick={() => router.push(`/dashboard/ai-feedback?interview=${interview.id}`)}
+                                    onClick={() => setSelectedDecisionInterview(interview)}
                                     className="flex items-center space-x-1 bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 px-3 py-1.5 rounded-xl text-xs font-medium transition-all duration-300 border border-blue-500/30"
                                   >
                                     <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -438,7 +462,7 @@ const InterviewsPage = () => {
                               </button>
                             )}
                             <button
-                              onClick={() => router.push(`/dashboard/ai-feedback?interview=${interview.id}`)}
+                              onClick={() => setSelectedDecisionInterview(interview)}
                               className="flex items-center space-x-1 bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 px-3 py-1.5 rounded-xl text-xs font-medium transition-all duration-300 border border-blue-500/30"
                             >
                               <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -457,6 +481,52 @@ const InterviewsPage = () => {
           </div>
         </div>
       </div>
+
+      {/* Decision Feedback Modal */}
+      {selectedDecisionInterview && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="backdrop-blur-xl bg-gray-800/95 rounded-3xl border border-white/10 shadow-2xl p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="text-xl font-bold text-white">Interview Feedback</h3>
+              <button
+                onClick={() => setSelectedDecisionInterview(null)}
+                className="text-gray-400 hover:text-white p-1 rounded-lg hover:bg-white/10 transition-colors"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div className="bg-white/5 rounded-xl p-4 border border-white/10">
+                <p className="text-gray-400 text-sm mb-1">Position</p>
+                <p className="text-white font-medium">{selectedDecisionInterview.position || 'N/A'}</p>
+              </div>
+
+              {selectedDecisionInterview.interviewer_decision && (
+                <div className="bg-white/5 rounded-xl p-4 border border-white/10">
+                  <p className="text-gray-400 text-sm mb-2">Final Status</p>
+                  <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-semibold ${
+                    selectedDecisionInterview.interviewer_decision === 'pass'
+                      ? 'bg-green-500/20 text-green-300 border border-green-500/30'
+                      : 'bg-red-500/20 text-red-300 border border-red-500/30'
+                  }`}>
+                    {String(selectedDecisionInterview.interviewer_decision).toUpperCase()}
+                  </span>
+                </div>
+              )}
+
+              <div className="bg-gradient-to-r from-purple-500/10 to-pink-500/10 border border-purple-500/30 rounded-xl p-5">
+                <p className="text-gray-400 text-sm mb-2">Interviewer Note</p>
+                <p className="text-gray-200 leading-relaxed whitespace-pre-wrap">
+                  {getDecisionNote(selectedDecisionInterview) || 'No detailed note provided yet.'}
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 };

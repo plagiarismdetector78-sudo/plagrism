@@ -18,6 +18,7 @@ const InterviewHistoryPage = () => {
   const [generatingPDF, setGeneratingPDF] = useState(false);
   const [showFeedbackModal, setShowFeedbackModal] = useState(false);
   const [feedbackText, setFeedbackText] = useState('');
+  const [interviewDecision, setInterviewDecision] = useState('');
   const [savingFeedback, setSavingFeedback] = useState(false);
   const [filter, setFilter] = useState('all');
 
@@ -280,6 +281,7 @@ const InterviewHistoryPage = () => {
   
   const handleOpenFeedbackModal = () => {
     setFeedbackText(selectedInterview.interviewer_feedback || '');
+    setInterviewDecision((selectedInterview.interviewer_decision || '').toLowerCase());
     setShowFeedbackModal(true);
   };
   
@@ -296,7 +298,8 @@ const InterviewHistoryPage = () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           interviewId: selectedInterview.id,
-          feedback: feedbackText.trim()
+          feedback: feedbackText.trim(),
+          interviewDecision: interviewDecision || null
         })
       });
       
@@ -327,6 +330,21 @@ const InterviewHistoryPage = () => {
       minute: '2-digit',
       hour12: true
     });
+  };
+
+  const parseDecisionFromFeedback = (feedbackText) => {
+    if (!feedbackText) return '';
+    const normalized = String(feedbackText).toLowerCase();
+    if (normalized.includes('decision: pass')) return 'pass';
+    if (normalized.includes('decision: fail')) return 'fail';
+    return '';
+  };
+
+  const extractDecisionNote = (feedbackText) => {
+    if (!feedbackText) return '';
+    const noteMatch = String(feedbackText).match(/note:\s*([\s\S]*)/i);
+    if (noteMatch?.[1]) return noteMatch[1].trim();
+    return feedbackText;
   };
 
   return (
@@ -640,17 +658,39 @@ const InterviewHistoryPage = () => {
                   </button>
                 </div>
                 
-                {/* Give Feedback Button */}
+                {/* Final Decision Section */}
                 {(selectedInterview.status === 'completed' || selectedInterview.status === 'pending') && (
-                  <div className="pt-3 border-t border-white/10 mt-3">
+                  <div className="pt-4 border-t border-white/10 mt-4 space-y-3">
+                    <div className="bg-white/5 rounded-xl p-4 border border-white/10">
+                      <div className="flex items-center justify-between mb-2">
+                        <h4 className="text-sm font-semibold text-gray-300">Final Decision</h4>
+                        {parseDecisionFromFeedback(selectedInterview.interviewer_feedback) ? (
+                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ${
+                            parseDecisionFromFeedback(selectedInterview.interviewer_feedback) === 'pass'
+                              ? 'bg-green-500/20 text-green-300 border border-green-500/30'
+                              : 'bg-red-500/20 text-red-300 border border-red-500/30'
+                          }`}>
+                            {parseDecisionFromFeedback(selectedInterview.interviewer_feedback).toUpperCase()}
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-yellow-500/20 text-yellow-300 border border-yellow-500/30">
+                            Pending
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs text-gray-400">
+                        {extractDecisionNote(selectedInterview.interviewer_feedback) || 'No decision note added yet.'}
+                      </p>
+                    </div>
+
                     <button 
                       onClick={handleOpenFeedbackModal}
-                      className="w-full bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-600 hover:to-emerald-600 text-white py-2 px-4 rounded-xl text-sm font-medium transition-colors flex items-center justify-center space-x-2"
+                      className="w-full bg-gradient-to-r from-indigo-500 to-purple-500 hover:from-indigo-600 hover:to-purple-600 text-white py-2.5 px-4 rounded-xl text-sm font-semibold transition-colors flex items-center justify-center space-x-2"
                     >
                       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                       </svg>
-                      <span>{selectedInterview.interviewer_feedback ? 'Edit Feedback' : 'Give Feedback'}</span>
+                      <span>{selectedInterview.interviewer_feedback ? 'Update Final Decision' : 'Set Final Decision'}</span>
                     </button>
                   </div>
                 )}
@@ -735,28 +775,28 @@ const InterviewHistoryPage = () => {
                   <div className="bg-white/5 rounded-xl p-4 border border-white/10">
                     <h5 className="text-sm font-medium text-gray-400 mb-2">Technical Accuracy</h5>
                     <div className="text-2xl font-bold text-white">
-                      {reportData.evaluation_data?.technicalScore || 0}%
+                      {reportData.evaluation_data?.accuracy || reportData.evaluation_data?.technicalScore || 0}%
                     </div>
                   </div>
                   
                   <div className="bg-white/5 rounded-xl p-4 border border-white/10">
                     <h5 className="text-sm font-medium text-gray-400 mb-2">Communication</h5>
                     <div className="text-2xl font-bold text-white">
-                      {reportData.evaluation_data?.communicationScore || 0}%
+                      {reportData.evaluation_data?.clarity || reportData.evaluation_data?.communicationScore || 0}%
                     </div>
                   </div>
                   
                   <div className="bg-white/5 rounded-xl p-4 border border-white/10">
                     <h5 className="text-sm font-medium text-gray-400 mb-2">Problem Solving</h5>
                     <div className="text-2xl font-bold text-white">
-                      {reportData.evaluation_data?.problemSolvingScore || 0}%
+                      {reportData.evaluation_data?.understanding || reportData.evaluation_data?.problemSolvingScore || 0}%
                     </div>
                   </div>
                   
                   <div className="bg-white/5 rounded-xl p-4 border border-white/10">
                     <h5 className="text-sm font-medium text-gray-400 mb-2">Code Quality</h5>
                     <div className="text-2xl font-bold text-white">
-                      {reportData.evaluation_data?.codeQualityScore || 0}%
+                      {reportData.evaluation_data?.completeness || reportData.evaluation_data?.codeQualityScore || 0}%
                     </div>
                   </div>
                 </div>
@@ -766,11 +806,35 @@ const InterviewHistoryPage = () => {
                   <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-xl p-4">
                     <h5 className="text-sm font-medium text-yellow-400 mb-2">AI Usage Detection</h5>
                     <p className="text-white">
-                      Probability: {reportData.evaluation_data.aiDetection.probability || 0}%
+                      {reportData.evaluation_data.aiDetection.probability
+                        ? `Probability: ${reportData.evaluation_data.aiDetection.probability}%`
+                        : `AI-flagged answers: ${reportData.evaluation_data.aiDetection.aiGeneratedCount || 0}/${reportData.evaluation_data.aiDetection.questionCountAnalyzed || 0}`}
                     </p>
                     <p className="text-gray-300 text-sm mt-2">
-                      {reportData.evaluation_data.aiDetection.explanation || 'No additional details'}
+                      {reportData.evaluation_data.aiDetection.explanation ||
+                        `Average confidence: ${reportData.evaluation_data.aiDetection.averageConfidence || 0}%`}
                     </p>
+                  </div>
+                )}
+
+                {/* Question-wise Results */}
+                {reportData.evaluation_data?.questionWiseResults?.length > 0 && (
+                  <div className="bg-white/5 rounded-xl p-4 border border-white/10">
+                    <h5 className="text-sm font-medium text-gray-300 mb-3">Question-wise Similarity</h5>
+                    <div className="space-y-3 max-h-80 overflow-y-auto pr-1">
+                      {reportData.evaluation_data.questionWiseResults.map((result, index) => (
+                        <div key={`${result.questionId}-${index}`} className="bg-black/30 rounded-lg p-3 border border-white/10">
+                          <div className="flex justify-between items-start gap-3">
+                            <p className="text-sm text-white font-medium">Q{index + 1}. {result.questionText || 'Question'}</p>
+                            <p className="text-sm font-bold text-purple-300">{result.score || 0}%</p>
+                          </div>
+                          <p className="text-xs text-gray-400 mt-2">{result.answer || 'No answer captured'}</p>
+                          {result.interpretation && (
+                            <p className="text-xs text-gray-300 mt-2">{result.interpretation}</p>
+                          )}
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 )}
 
@@ -788,7 +852,7 @@ const InterviewHistoryPage = () => {
                   <div className="bg-orange-500/10 border border-orange-500/30 rounded-xl p-4">
                     <h5 className="text-sm font-medium text-orange-400 mb-2">Areas for Improvement</h5>
                     <ul className="list-disc list-inside text-gray-300 text-sm space-y-1">
-                      {reportData.evaluation_data?.improvements?.map((improvement, idx) => (
+                      {(reportData.evaluation_data?.weaknesses || reportData.evaluation_data?.improvements || []).map((improvement, idx) => (
                         <li key={idx}>{improvement}</li>
                       )) || <li>No improvements noted</li>}
                     </ul>
@@ -814,7 +878,7 @@ const InterviewHistoryPage = () => {
           <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
             <div className="backdrop-blur-xl bg-gray-800/95 rounded-3xl border border-white/10 shadow-2xl p-6 w-full max-w-2xl">
               <div className="flex justify-between items-center mb-6">
-                <h3 className="text-xl font-bold text-white">Give Feedback to Candidate</h3>
+                <h3 className="text-xl font-bold text-white">Finalize Interview Decision</h3>
                 <button
                   onClick={() => setShowFeedbackModal(false)}
                   className="text-gray-400 hover:text-white p-1 rounded-lg hover:bg-white/10 transition-colors"
@@ -837,12 +901,40 @@ const InterviewHistoryPage = () => {
 
                 <div>
                   <label className="block text-sm font-medium text-gray-300 mb-2">
-                    Your Feedback
+                    Decision
+                  </label>
+                  <div className="flex gap-3 mb-4">
+                    <button
+                      type="button"
+                      onClick={() => setInterviewDecision('pass')}
+                      className={`px-4 py-2 rounded-xl border text-sm font-medium transition-colors ${
+                        interviewDecision === 'pass'
+                          ? 'bg-green-500/20 text-green-300 border-green-500/40'
+                          : 'bg-white/10 text-gray-300 border-white/20 hover:bg-white/20'
+                      }`}
+                    >
+                      Pass
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setInterviewDecision('fail')}
+                      className={`px-4 py-2 rounded-xl border text-sm font-medium transition-colors ${
+                        interviewDecision === 'fail'
+                          ? 'bg-red-500/20 text-red-300 border-red-500/40'
+                          : 'bg-white/10 text-gray-300 border-white/20 hover:bg-white/20'
+                      }`}
+                    >
+                      Fail
+                    </button>
+                  </div>
+
+                  <label className="block text-sm font-medium text-gray-300 mb-2">
+                    Decision Note
                   </label>
                   <textarea
                     value={feedbackText}
                     onChange={(e) => setFeedbackText(e.target.value)}
-                    placeholder="Share your thoughts about the candidate's performance, strengths, areas for improvement, and overall assessment..."
+                    placeholder="Explain why candidate was passed or failed..."
                     rows={8}
                     className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:ring-2 focus:ring-purple-500 focus:border-transparent resize-none"
                   />
@@ -860,7 +952,7 @@ const InterviewHistoryPage = () => {
                   </button>
                   <button
                     onClick={handleSaveFeedback}
-                    disabled={savingFeedback || !feedbackText.trim()}
+                    disabled={savingFeedback || !feedbackText.trim() || !interviewDecision}
                     className="flex-1 bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-600 hover:to-emerald-600 text-white py-2 px-4 rounded-xl text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     {savingFeedback ? 'Saving...' : 'Save Feedback'}
