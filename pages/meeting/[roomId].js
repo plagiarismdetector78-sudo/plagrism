@@ -800,23 +800,30 @@ socket.on("ready-to-call", async () => {
         console.log("📝 Full transcript length:", updated.length);
         return updated;
       });
-      if (questionId) {
-        appendChunkToQuestionAnswer(questionId, questionText, newText);
-        logInterviewQA("transcript-update", {
-          role: userRole,
-          questionId,
-          questionTextPreview: (questionText || "").slice(0, 60),
-          chunkPreview: (newText || "").slice(0, 120),
-          timestamp,
-          recorder: getRecorderDebugState(),
-        });
-      }
-
       const activeQuestion = activeQuestionRef.current;
       const activeQuestionId = getQuestionId(activeQuestion);
+      const activeQuestionText = getQuestionText(activeQuestion);
+
+      const effectiveQuestionId = questionId ?? activeQuestionId ?? null;
+      const effectiveQuestionText = questionText || activeQuestionText || "";
+
+      logInterviewQA("transcript-update:received", {
+        role: userRole,
+        rawQuestionId: questionId ?? null,
+        rawQuestionTextPreview: (questionText || "").slice(0, 60),
+        effectiveQuestionId,
+        effectiveQuestionTextPreview: (effectiveQuestionText || "").slice(0, 60),
+        chunkPreview: (newText || "").slice(0, 120),
+        timestamp,
+        recorder: getRecorderDebugState(),
+      });
+
+      if (effectiveQuestionId) {
+        appendChunkToQuestionAnswer(effectiveQuestionId, effectiveQuestionText, newText);
+      }
 
       setCurrentQuestionTranscript((prev) => {
-        if (questionId && String(questionId) !== String(activeQuestionId)) {
+        if (effectiveQuestionId && String(effectiveQuestionId) !== String(activeQuestionId)) {
           return prev;
         }
         const merged = prev ? `${prev.trim()} ${newText}`.trim() : newText.trim();
@@ -1163,11 +1170,21 @@ const toggleTranscription = async () => {
     if (forcedTag) {
       flushChunkTagRef.current = null;
     }
-    const chunkQuestionId = forcedTag?.id ?? recordingChunkQuestionRef.current?.id ?? null;
-    const chunkQuestionText = forcedTag?.text ?? recordingChunkQuestionRef.current?.text ?? "";
+    const fallbackSnap = resolveSegmentQuestionSnap();
+    const chunkQuestionId =
+      forcedTag?.id ??
+      recordingChunkQuestionRef.current?.id ??
+      fallbackSnap?.id ??
+      null;
+    const chunkQuestionText =
+      forcedTag?.text ??
+      recordingChunkQuestionRef.current?.text ??
+      fallbackSnap?.text ??
+      "";
     logInterviewQA("recorder:ondataavailable:start", {
       blobSize: e.data.size,
       forcedTag,
+      fallbackSnap,
       chunkQuestionId,
       chunkQuestionText,
       recorder: getRecorderDebugState(),
