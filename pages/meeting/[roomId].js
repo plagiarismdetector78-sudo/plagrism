@@ -69,6 +69,8 @@ export default function MeetingPage() {
   const [testStarted, setTestStarted] = useState(false);
   const [interviewId, setInterviewId] = useState(null);
   const [questionCategory, setQuestionCategory] = useState('Computer Science');
+  const DEFAULT_QUESTION_CATEGORIES = ['Computer Science', 'Software Engineering', 'Cyber Security'];
+  const [domainCategories, setDomainCategories] = useState(DEFAULT_QUESTION_CATEGORIES);
   const [loadingQuestions, setLoadingQuestions] = useState(false);
   // Draggable video state
   const [isDragging, setIsDragging] = useState(false);
@@ -77,10 +79,12 @@ export default function MeetingPage() {
   const [isVideoHidden, setIsVideoHidden] = useState(false);
   const [scheduledInterview, setScheduledInterview] = useState(null);
   const [candidateInfo, setCandidateInfo] = useState(null);
-  const FIXED_CATEGORIES = ["Computer Science", "Software Engineering", "Cyber Security"];
-  const lockedCategory = FIXED_CATEGORIES.includes(scheduledInterview?.position)
-    ? scheduledInterview.position
-    : null;
+  const lockedCategory =
+    scheduledInterview?.position &&
+    scheduledInterview.position !== 'Not Provided' &&
+    domainCategories.includes(scheduledInterview.position)
+      ? scheduledInterview.position
+      : null;
   /** Longer chunks reduce mid-word cuts; question switches flush early via recorder.stop(). */
   const RECORDING_CHUNK_MS = 12000;
 
@@ -102,6 +106,38 @@ export default function MeetingPage() {
   useEffect(() => {
     questionTranscriptMapRef.current = questionTranscriptMap;
   }, [questionTranscriptMap]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await fetch("/api/question-categories");
+        const d = await r.json();
+        if (
+          !cancelled &&
+          d.success &&
+          Array.isArray(d.categories) &&
+          d.categories.length > 0
+        ) {
+          setDomainCategories(d.categories);
+        }
+      } catch {
+        /* keep defaults */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (
+      domainCategories.length > 0 &&
+      !domainCategories.includes(questionCategory)
+    ) {
+      setQuestionCategory(domainCategories[0]);
+    }
+  }, [domainCategories, questionCategory]);
 
   const logInterviewQA = (label, data) => {
     if (process.env.NEXT_PUBLIC_DEBUG_MEETING_QA !== "1") return;
@@ -2412,7 +2448,7 @@ useEffect(() => {
         onCategoryChange={(category) => {
           setQuestionCategory(category);
         }}
-        availableCategories={lockedCategory ? [lockedCategory] : FIXED_CATEGORIES}
+        availableCategories={lockedCategory ? [lockedCategory] : domainCategories}
         lockCategorySelection={Boolean(lockedCategory)}
         showPanel={showQuestionPanel}
         onTogglePanel={() => setShowQuestionPanel(!showQuestionPanel)}

@@ -8,7 +8,7 @@ import {
   FaSignOutAlt,
   FaQuestionCircle,
   FaChartLine,
-  FaSearchPlus,
+  FaBook,
   FaUserCircle,
   FaVideo,
   FaCalendarAlt,
@@ -76,10 +76,10 @@ const Sidebar = ({ sidebarCollapsed, toggleSidebar, handleLogout }) => {
           // },
           {
             id: 4,
-            name: "Plagiarism Detection",
+            name: "Question Bank",
             path: "/dashboard/plagiarism-detection",
-            icon: <FaSearchPlus className="text-lg" />,
-            description: "AI-powered detection",
+            icon: <FaBook className="text-lg" />,
+            description: "Questions & categories",
           },
           {
             id: 5,
