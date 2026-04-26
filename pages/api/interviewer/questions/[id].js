@@ -18,6 +18,14 @@ export default async function handler(req, res) {
             const category = String(req.body?.category || '').trim();
             const difficultyLevel = String(req.body?.difficultyLevel || 'Medium').trim() || 'Medium';
             const expectedAnswer = String(req.body?.expectedAnswer || '').trim();
+            const expectedAnswers = Array.isArray(req.body?.expectedAnswers)
+                ? req.body.expectedAnswers
+                : [expectedAnswer];
+            const normalizedExpectedAnswers = [...new Set(
+                expectedAnswers
+                    .map((answer) => String(answer || '').trim())
+                    .filter(Boolean)
+            )];
 
             if (!questionText || !category) {
                 return res.status(400).json({
@@ -25,10 +33,10 @@ export default async function handler(req, res) {
                     message: 'questionText and category are required',
                 });
             }
-            if (!expectedAnswer) {
+            if (normalizedExpectedAnswers.length === 0) {
                 return res.status(400).json({
                     success: false,
-                    message: 'expectedAnswer is required',
+                    message: 'At least one expected answer is required',
                 });
             }
 
@@ -49,16 +57,17 @@ export default async function handler(req, res) {
                     const err = new Error('NOT_FOUND');
                     throw err;
                 }
-                const ex = await client.query(
-                    `UPDATE expectedanswers SET answertext = $1
-                     WHERE questionid = $2 AND iscorrect = true`,
-                    [expectedAnswer, id]
+                await client.query(
+                    `DELETE FROM expectedanswers
+                     WHERE questionid = $1 AND iscorrect = true`,
+                    [id]
                 );
-                if (ex.rowCount === 0) {
+
+                for (const answerText of normalizedExpectedAnswers) {
                     await client.query(
                         `INSERT INTO expectedanswers (questionid, answertext, iscorrect)
                          VALUES ($1, $2, true)`,
-                        [id, expectedAnswer]
+                        [id, answerText]
                     );
                 }
             });

@@ -1,5 +1,5 @@
 // pages/api/calculate-plagiarism.js
-// Loads question + gold expected answer from Postgres, then scores the candidate transcript
+// Loads question + expected answers from Postgres, then scores the candidate transcript
 // via Hugging Face: sentence-transformers/all-MiniLM-L6-v2 embeddings + cosine similarity,
 // blended with keyword/concept coverage and a ChatGPT-detector signal (see lib/huggingface-evaluation.js).
 import { query } from '../../lib/db';
@@ -20,7 +20,7 @@ export default async function handler(req, res) {
             });
         }
 
-        // Fetch question text and expected answer from database
+        // Fetch question text and expected answers from database
         const questionResult = await query(
             `SELECT questiontext 
              FROM questions 
@@ -31,8 +31,7 @@ export default async function handler(req, res) {
 
         const answerResult = await query(
             `SELECT answertext FROM expectedanswers 
-             WHERE questionid = $1 AND iscorrect = true 
-             LIMIT 1`,
+             WHERE questionid = $1 AND iscorrect = true`,
             [questionId]
         );
 
@@ -46,21 +45,37 @@ export default async function handler(req, res) {
         if (answerResult.rows.length === 0) {
             return res.status(404).json({
                 success: false,
-                message: 'Expected answer not found for this question'
+                message: 'Expected answers not found for this question'
             });
         }
 
         const questionText = questionResult.rows[0].questiontext;
-        const expectedAnswer = answerResult.rows[0].answertext;
+        const expectedAnswers = answerResult.rows
+            .map((row) => row.answertext)
+            .filter((answer) => Boolean(answer && answer.trim()));
+
+        if (expectedAnswers.length === 0) {
+            return res.status(404).json({
+                success: false,
+                message: 'Expected answers not found for this question'
+            });
+        }
 
         console.log('🤖 Starting Hugging Face evaluation for question:', questionId);
 
-        // Use Hugging Face semantic similarity evaluation
-        const evaluation = await evaluateAnswerWithHuggingFace(
-            questionText,
-            expectedAnswer,
-            transcribedAnswer
-        );
+        // Evaluate against all expected answers and keep the highest score.
+        let evaluation = null;
+        for (const expectedAnswer of expectedAnswers) {
+            const currentEvaluation = await evaluateAnswerWithHuggingFace(
+                questionText,
+                expectedAnswer,
+                transcribedAnswer
+            );
+
+            if (!evaluation || currentEvaluation.overallScore > evaluation.overallScore) {
+                evaluation = currentEvaluation;
+            }
+        }
 
         console.log('✅ Hugging Face Evaluation completed:', evaluation.overallScore);
         console.log('📊 Full Evaluation Data:', JSON.stringify(evaluation, null, 2));

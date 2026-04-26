@@ -17,8 +17,12 @@ export default async function handler(req, res) {
                     q.questiontext,
                     q.category,
                     q.difficultylevel,
-                    ea.id AS expectedanswer_id,
-                    ea.answertext AS expected_answer
+                    MIN(ea.id) AS expectedanswer_id,
+                    MIN(ea.answertext) AS expected_answer,
+                    COALESCE(
+                        ARRAY_REMOVE(ARRAY_AGG(ea.answertext ORDER BY ea.id), NULL),
+                        '{}'::text[]
+                    ) AS expected_answers
                 FROM questions q
                 LEFT JOIN expectedanswers ea ON ea.questionid = q.id AND ea.iscorrect = true
                 WHERE 1=1
@@ -34,7 +38,7 @@ export default async function handler(req, res) {
                 params.push(String(difficulty));
                 n++;
             }
-            sql += ` ORDER BY q.id ASC`;
+            sql += ` GROUP BY q.id, q.questiontext, q.category, q.difficultylevel ORDER BY q.id ASC`;
             const result = await query(sql, params);
             return res.status(200).json({ success: true, questions: result.rows });
         }
@@ -44,6 +48,14 @@ export default async function handler(req, res) {
             const category = String(req.body?.category || '').trim();
             const difficultyLevel = String(req.body?.difficultyLevel || 'Medium').trim() || 'Medium';
             const expectedAnswer = String(req.body?.expectedAnswer || '').trim();
+            const expectedAnswers = Array.isArray(req.body?.expectedAnswers)
+                ? req.body.expectedAnswers
+                : [expectedAnswer];
+            const normalizedExpectedAnswers = [...new Set(
+                expectedAnswers
+                    .map((answer) => String(answer || '').trim())
+                    .filter(Boolean)
+            )];
 
             if (!questionText || !category) {
                 return res.status(400).json({
@@ -51,10 +63,10 @@ export default async function handler(req, res) {
                     message: 'questionText and category are required',
                 });
             }
-            if (!expectedAnswer) {
+            if (normalizedExpectedAnswers.length === 0) {
                 return res.status(400).json({
                     success: false,
-                    message: 'expectedAnswer is required for interview scoring',
+                    message: 'At least one expected answer is required for interview scoring',
                 });
             }
 
@@ -71,17 +83,23 @@ export default async function handler(req, res) {
                     [questionText, category, difficultyLevel]
                 );
                 const newId = qIns.rows[0].id;
-                await client.query(
-                    `INSERT INTO expectedanswers (questionid, answertext, iscorrect)
-                     VALUES ($1, $2, true)`,
-                    [newId, expectedAnswer]
-                );
+                for (const answerText of normalizedExpectedAnswers) {
+                    await client.query(
+                        `INSERT INTO expectedanswers (questionid, answertext, iscorrect)
+                         VALUES ($1, $2, true)`,
+                        [newId, answerText]
+                    );
+                }
                 return qIns.rows[0];
             });
 
             return res.status(201).json({
                 success: true,
-                question: { ...row, expected_answer: expectedAnswer },
+                question: {
+                    ...row,
+                    expected_answer: normalizedExpectedAnswers[0],
+                    expected_answers: normalizedExpectedAnswers,
+                },
             });
         }
 

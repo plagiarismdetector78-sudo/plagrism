@@ -28,7 +28,7 @@ function QuestionBankPage() {
     questionText: '',
     category: '',
     difficultyLevel: 'Medium',
-    expectedAnswer: '',
+    expectedAnswers: [''],
   });
   const [savingQuestion, setSavingQuestion] = useState(false);
 
@@ -165,26 +165,35 @@ function QuestionBankPage() {
       questionText: '',
       category: filterCategory || categories[0]?.name || '',
       difficultyLevel: 'Medium',
-      expectedAnswer: '',
+      expectedAnswers: [''],
     });
     setQuestionModal({ mode: 'create' });
   };
 
   const openEditQuestion = (q) => {
+    const existingExpectedAnswers = Array.isArray(q.expected_answers)
+      ? q.expected_answers.filter(Boolean)
+      : (q.expected_answer ? [q.expected_answer] : []);
     setQuestionForm({
       questionText: q.questiontext || '',
       category: q.category || '',
       difficultyLevel: q.difficultylevel || 'Medium',
-      expectedAnswer: q.expected_answer || '',
+      expectedAnswers: existingExpectedAnswers.length > 0 ? existingExpectedAnswers : [''],
     });
     setQuestionModal({ mode: 'edit', id: q.id });
   };
 
   const saveQuestion = async () => {
     if (!userId) return;
-    const { questionText, category, difficultyLevel, expectedAnswer } = questionForm;
-    if (!questionText.trim() || !category.trim() || !expectedAnswer.trim()) {
-      alert('Question text, category, and expected answer are required.');
+    const { questionText, category, difficultyLevel, expectedAnswers } = questionForm;
+    const normalizedExpectedAnswers = [...new Set(
+      (Array.isArray(expectedAnswers) ? expectedAnswers : [])
+        .map((answer) => answer.trim())
+        .filter(Boolean)
+    )];
+
+    if (!questionText.trim() || !category.trim() || normalizedExpectedAnswers.length === 0) {
+      alert('Question text, category, and at least one expected answer are required.');
       return;
     }
     setSavingQuestion(true);
@@ -198,7 +207,8 @@ function QuestionBankPage() {
             questionText: questionText.trim(),
             category: category.trim(),
             difficultyLevel,
-            expectedAnswer: expectedAnswer.trim(),
+            expectedAnswer: normalizedExpectedAnswers[0],
+            expectedAnswers: normalizedExpectedAnswers,
           }),
         });
         const data = await res.json();
@@ -215,7 +225,8 @@ function QuestionBankPage() {
             questionText: questionText.trim(),
             category: category.trim(),
             difficultyLevel,
-            expectedAnswer: expectedAnswer.trim(),
+            expectedAnswer: normalizedExpectedAnswers[0],
+            expectedAnswers: normalizedExpectedAnswers,
           }),
         });
         const data = await res.json();
@@ -417,11 +428,22 @@ function QuestionBankPage() {
                           <td className="py-3 pr-2 text-white">{q.id}</td>
                           <td className="py-3 pr-2 max-w-md">
                             <p className="text-white line-clamp-3">{q.questiontext}</p>
-                            {q.expected_answer && (
+                            {Array.isArray(q.expected_answers) && q.expected_answers.length > 0 ? (
+                              <div className="text-xs text-gray-500 mt-1 space-y-1">
+                                {q.expected_answers.slice(0, 2).map((answer, index) => (
+                                  <p key={`${q.id}-expected-${index}`} className="line-clamp-2">
+                                    Expected {index + 1}: {answer}
+                                  </p>
+                                ))}
+                                {q.expected_answers.length > 2 && (
+                                  <p>+{q.expected_answers.length - 2} more expected answers</p>
+                                )}
+                              </div>
+                            ) : q.expected_answer ? (
                               <p className="text-xs text-gray-500 mt-1 line-clamp-2">
                                 Expected: {q.expected_answer}
                               </p>
-                            )}
+                            ) : null}
                           </td>
                           <td className="py-3 pr-2 whitespace-nowrap">{q.category}</td>
                           <td className="py-3 pr-2 whitespace-nowrap">{q.difficultylevel}</td>
@@ -534,15 +556,53 @@ function QuestionBankPage() {
                   </div>
                 </div>
                 <div>
-                  <label className="block text-sm text-gray-400 mb-1">Expected answer</label>
-                  <textarea
-                    rows={5}
-                    value={questionForm.expectedAnswer}
-                    onChange={(e) =>
-                      setQuestionForm({ ...questionForm, expectedAnswer: e.target.value })
+                  <label className="block text-sm text-gray-400 mb-2">Expected answers</label>
+                  <div className="space-y-3">
+                    {questionForm.expectedAnswers.map((answer, index) => (
+                      <div key={`expected-answer-${index}`} className="flex gap-2 items-start">
+                        <textarea
+                          rows={3}
+                          value={answer}
+                          onChange={(e) => {
+                            const updatedAnswers = [...questionForm.expectedAnswers];
+                            updatedAnswers[index] = e.target.value;
+                            setQuestionForm({ ...questionForm, expectedAnswers: updatedAnswers });
+                          }}
+                          placeholder={`Expected answer ${index + 1}`}
+                          className="flex-1 px-4 py-3 bg-black/50 border border-white/20 rounded-xl text-white"
+                        />
+                        {questionForm.expectedAnswers.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const updatedAnswers = questionForm.expectedAnswers.filter(
+                                (_, answerIndex) => answerIndex !== index
+                              );
+                              setQuestionForm({
+                                ...questionForm,
+                                expectedAnswers: updatedAnswers.length > 0 ? updatedAnswers : [''],
+                              });
+                            }}
+                            className="px-3 py-2 rounded-lg bg-red-500/20 text-red-300 hover:bg-red-500/30"
+                          >
+                            Delete
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setQuestionForm({
+                        ...questionForm,
+                        expectedAnswers: [...questionForm.expectedAnswers, ''],
+                      })
                     }
-                    className="w-full px-4 py-3 bg-black/50 border border-white/20 rounded-xl text-white"
-                  />
+                    className="mt-3 px-3 py-2 rounded-lg bg-white/10 text-white hover:bg-white/20 text-sm"
+                  >
+                    + Add another expected answer
+                  </button>
                 </div>
               </div>
               <div className="flex justify-end gap-2 mt-6">
