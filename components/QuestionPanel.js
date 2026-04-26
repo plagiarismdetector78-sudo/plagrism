@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useEffect, useRef } from 'react';
 
 export default function QuestionPanel({
     userRole,
@@ -12,7 +12,7 @@ export default function QuestionPanel({
     plagiarismScore,
     plagiarismDetails,
     isCheckingPlagiarism,
-    transcript, // This will be currentAnswer now
+    transcript,
     transcriptionEnabled,
     onNextQuestion,
     onPreviousQuestion,
@@ -22,7 +22,8 @@ export default function QuestionPanel({
     availableCategories,
     lockCategorySelection,
     showPanel,
-    onTogglePanel
+    onTogglePanel,
+    isMinimized = false
 }) {
     const defaultCategories = [
         'Computer Science',
@@ -37,7 +38,6 @@ export default function QuestionPanel({
     const transcriptRef = useRef(null);
 
     // Auto-scroll transcript
-    // 
     useEffect(() => {
         if (transcriptRef.current) {
             transcriptRef.current.scrollTop = transcriptRef.current.scrollHeight;
@@ -46,25 +46,11 @@ export default function QuestionPanel({
 
     const hasPlagResults = plagiarismScore !== null || (userRole === 'interviewer' && transcript && transcript.length > 0);
 
-    const [isMinimized, setIsMinimized] = useState(false);
-
     return (
         <div className={`fixed left-0 right-0 z-40 transition-all duration-500 ease-in-out ${showPanel ? 'bottom-12 translate-y-0' : 'bottom-12 translate-y-full'
             }`}>
-            {/* Minimize toggle button — sits above the panel */}
-            {showPanel && (
-                <div className="flex justify-center mb-0">
-                    <button
-                        onClick={() => setIsMinimized(v => !v)}
-                        className="px-4 py-1 bg-gray-900/90 border border-white/20 border-b-0 rounded-t-xl text-xs text-gray-400 hover:text-white transition-colors flex items-center space-x-2"
-                    >
-                        <i className={`fas fa-chevron-${isMinimized ? 'up' : 'down'} text-[10px]`}></i>
-                        <span>{isMinimized ? 'Show Panel' : 'Minimize'}</span>
-                    </button>
-                </div>
-            )}
             {/* Enhanced Glassmorphism Container */}
-            <div className={`bg-gradient-to-b from-gray-900/95 via-gray-900/90 to-gray-900/95 backdrop-blur-3xl border-t border-white/20 shadow-[0_-20px_60px_rgba(0,0,0,0.7)] flex flex-col w-full relative overflow-hidden transition-all duration-500 ease-in-out ${isMinimized ? 'h-0 overflow-hidden' : 'h-[38vh] max-h-[360px]'}`}>
+            <div className={`bg-gradient-to-b from-gray-900/95 via-gray-900/90 to-gray-900/95 backdrop-blur-3xl border-t border-white/20 shadow-[0_-20px_60px_rgba(0,0,0,0.7)] flex flex-col w-full relative overflow-hidden transition-all duration-500 ease-in-out ${isMinimized ? 'h-0' : 'h-[38vh] max-h-[360px]'}`}>
                 {/* Animated Background Gradient */}
                 <div className="absolute inset-0 bg-gradient-to-br from-purple-500/5 via-transparent to-blue-500/5 pointer-events-none"></div>
                 <div className="absolute top-0 left-1/4 w-96 h-96 bg-purple-500/10 rounded-full blur-3xl animate-pulse pointer-events-none"></div>
