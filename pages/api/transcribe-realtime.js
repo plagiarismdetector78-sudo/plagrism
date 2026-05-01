@@ -30,7 +30,7 @@ function normalizeTranscription(rawText = "") {
   return text;
 }
 
-export default function handler(req, res) {
+export default async function handler(req, res) {
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Method not allowed" });
   }
@@ -47,30 +47,34 @@ export default function handler(req, res) {
     keepExtensions: true,
   });
 
-  form.parse(req, async (err, fields, files) => {
-    if (err) {
-      console.error("Form parse error:", err);
-      return res.status(500).json({ error: "File parse error" });
-    }
+  await new Promise((resolve) => {
+    form.parse(req, async (err, fields, files) => {
+      if (err) {
+        console.error("Form parse error:", err);
+        res.status(500).json({ error: "File parse error" });
+        return resolve();
+      }
 
     const audioFile = Array.isArray(files.file)
       ? files.file[0]
       : files.file;
 
-    if (!audioFile || !audioFile.filepath) {
-      return res.status(400).json({ error: "No audio file received" });
-    }
+      if (!audioFile || !audioFile.filepath) {
+        res.status(400).json({ error: "No audio file received" });
+        return resolve();
+      }
 
     const filePath = audioFile.filepath;
 
-    try {
+      try {
       // Check if GROQ_API_KEY is configured
       if (!process.env.GROQ_API_KEY) {
         console.error("GROQ_API_KEY not configured");
         fs.unlink(filePath, () => {});
-        return res.status(200).json({
+        res.status(200).json({
           text: "[Transcription unavailable - API key not configured]",
         });
+        return resolve();
       }
 
       // Check file size - if too small, skip transcription
@@ -80,11 +84,12 @@ export default function handler(req, res) {
       if (stats.size < 1000) { // Less than 1KB
         console.log("⚠️ Audio chunk too small, skipping transcription");
         fs.unlink(filePath, () => {});
-        return res.status(200).json({
+        res.status(200).json({
           text: "",
           skipped: true,
           reason: "chunk_too_small"
         });
+        return resolve();
       }
 
       console.log("🎯 Sending to GROQ Whisper API...");
@@ -103,9 +108,10 @@ export default function handler(req, res) {
       const text = normalizeTranscription(transcription.text || "");
       console.log("✅ Transcription result:", text || "(empty)");
       
-      return res.status(200).json({
+      res.status(200).json({
         text: text,
       });
+      return resolve();
     } catch (error) {
       console.error("❌ Groq transcription error:");
       console.error("Error message:", error.message);
@@ -116,12 +122,14 @@ export default function handler(req, res) {
       fs.unlink(filePath, () => {});
       
       // Return error details for debugging
-      return res.status(200).json({
+      res.status(200).json({
         text: "",
         error: true,
         errorMessage: error.message || "Unknown error",
         errorCode: error.code || error.status,
       });
+      return resolve();
     }
+    });
   });
 }

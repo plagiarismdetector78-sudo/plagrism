@@ -26,6 +26,8 @@ export default function MeetingPage() {
   const pendingFlushAckRequestRef = useRef(null);
   /** Interviewer: awaiting flush-ack request id before generating report. */
   const awaitingFlushAckRequestRef = useRef(null);
+  /** Interviewer: awaiting typed-answers sync before report. */
+  const awaitingTypedSyncRequestRef = useRef(null);
   /**
    * Candidate: last question payload from `question-asked` (interviewer broadcast).
    * Used for every new MediaRecorder segment so timer-only restarts match the question on screen,
@@ -49,6 +51,11 @@ export default function MeetingPage() {
   const [currentQuestionTranscript, setCurrentQuestionTranscript] = useState(""); // Transcript for CURRENT question only
   const [questionAnswers, setQuestionAnswers] = useState([]); // Store all Q&A pairs: [{questionId, questionText, answer}]
   const [questionTranscriptMap, setQuestionTranscriptMap] = useState({}); // { [questionId]: transcript }
+  const [questionTypedMap, setQuestionTypedMap] = useState({}); // { [questionId]: typedAnswer }
+  const [currentQuestionTyped, setCurrentQuestionTyped] = useState(""); // Typed answer for CURRENT question
+  const [questionTypedMetaMap, setQuestionTypedMetaMap] = useState({}); // { [questionId]: { firstInputAt,lastInputAt,activeMs,keystrokes,pasteCount,pastedChars,changeCount } }
+  const typedEmitTimerRef = useRef(null);
+  const questionTypedMetaMapRef = useRef({});
   /** Mirrors questionTranscriptMap for socket handlers (effect deps omit map → avoid stale {}). */
   const questionTranscriptMapRef = useRef({});
   const [askedQuestions, setAskedQuestions] = useState([]); // Track all displayed questions in this interview
@@ -108,6 +115,125 @@ export default function MeetingPage() {
   }, [questionTranscriptMap]);
 
   useEffect(() => {
+    // keep current typed answer synced when switching questions
+    const activeId = getQuestionId(currentQuestion);
+    const key = activeId == null || activeId === "" ? null : String(activeId);
+    setCurrentQuestionTyped(key ? (questionTypedMap[key] || "") : "");
+  }, [currentQuestion, questionTypedMap]);
+
+  useEffect(() => {
+    questionTypedMetaMapRef.current = questionTypedMetaMap;
+  }, [questionTypedMetaMap]);
+
+  const setTypedForQuestion = (questionId, value) => {
+    if (!questionId) return;
+    const key = String(questionId);
+    const text = String(value || "");
+    setQuestionTypedMap((prev) => ({ ...prev, [key]: text }));
+  };
+
+  const ensureTypedMeta = (questionId) => {
+    const key = String(questionId);
+    // Write-through to ref immediately so report generation can see it.
+    if (!questionTypedMetaMapRef.current[key]) {
+      questionTypedMetaMapRef.current = {
+        ...(questionTypedMetaMapRef.current || {}),
+        [key]: {
+          firstInputAt: null,
+          lastInputAt: null,
+          activeMs: 0,
+          keystrokes: 0,
+          pasteCount: 0,
+          pastedChars: 0,
+          changeCount: 0,
+        },
+      };
+    }
+    logTypingDebug("ensureTypedMeta", {
+      role: userRole,
+      questionId: key,
+      hasRef: Boolean(questionTypedMetaMapRef.current[key]),
+      refSnapshot: questionTypedMetaMapRef.current[key],
+    });
+    setQuestionTypedMetaMap((prev) => {
+      if (prev[key]) return prev;
+      return {
+        ...prev,
+        [key]: {
+          firstInputAt: null,
+          lastInputAt: null,
+          activeMs: 0,
+          keystrokes: 0,
+          pasteCount: 0,
+          pastedChars: 0,
+          changeCount: 0,
+        },
+      };
+    });
+  };
+
+  const recordTypingEvent = (questionId, { type, insertedTextLength = 0 }) => {
+    if (!questionId) return;
+    const key = String(questionId);
+    const now = Date.now();
+    logTypingDebug("recordTypingEvent:called", {
+      role: userRole,
+      questionId: key,
+      type,
+      insertedTextLength,
+      refBefore: questionTypedMetaMapRef.current?.[key] || null,
+    });
+    setQuestionTypedMetaMap((prev) => {
+      const cur =
+        (questionTypedMetaMapRef.current && questionTypedMetaMapRef.current[key]) ||
+        prev[key] || {
+          firstInputAt: null,
+          lastInputAt: null,
+          activeMs: 0,
+          keystrokes: 0,
+          pasteCount: 0,
+          pastedChars: 0,
+          changeCount: 0,
+        };
+
+      let deltaActive = 0;
+      if (cur.lastInputAt && now - cur.lastInputAt <= 8000) {
+        deltaActive = now - cur.lastInputAt;
+      }
+
+      const next = { ...cur };
+      if (!next.firstInputAt) next.firstInputAt = now;
+      next.lastInputAt = now;
+      next.activeMs = (next.activeMs || 0) + deltaActive;
+      next.changeCount = (next.changeCount || 0) + 1;
+
+      if (type === "keystroke") {
+        next.keystrokes = (next.keystrokes || 0) + 1;
+      }
+      if (type === "paste") {
+        next.pasteCount = (next.pasteCount || 0) + 1;
+        next.pastedChars = (next.pastedChars || 0) + Math.max(0, insertedTextLength);
+      }
+
+      // Write-through to ref so the latest value is available immediately.
+      questionTypedMetaMapRef.current = {
+        ...(questionTypedMetaMapRef.current || {}),
+        [key]: next,
+      };
+
+      logTypingDebug("recordTypingEvent:updated", {
+        role: userRole,
+        questionId: key,
+        type,
+        insertedTextLength,
+        next,
+      });
+
+      return { ...prev, [key]: next };
+    });
+  };
+
+  useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
@@ -142,6 +268,22 @@ export default function MeetingPage() {
   const logInterviewQA = (label, data) => {
     if (process.env.NEXT_PUBLIC_DEBUG_MEETING_QA !== "1") return;
     console.log(`[InterviewQA] ${label}`, data);
+  };
+
+  const logTypingDebug = (label, data) => {
+    try {
+      if (typeof window !== "undefined") {
+        const enabled =
+          process.env.NEXT_PUBLIC_DEBUG_TYPING === "1" ||
+          localStorage.getItem("debugTyping") === "1";
+        if (!enabled) return;
+      } else if (process.env.NEXT_PUBLIC_DEBUG_TYPING !== "1") {
+        return;
+      }
+    } catch {
+      // ignore
+    }
+    console.log(`[TypingDebug] ${label}`, data);
   };
 
   const getRecorderDebugState = () => ({
@@ -927,6 +1069,127 @@ socket.on("ready-to-call", async () => {
       awaitingFlushAckRequestRef.current = null;
     });
 
+    // Typed answer sync (candidate → interviewer)
+    socket.on("typed-answer-update", ({ questionId, typedAnswer, meta, timestamp }) => {
+      if (!questionId) return;
+      const key = String(questionId);
+      const text = String(typedAnswer || "");
+      logTypingDebug("socket:typed-answer-update:received", {
+        role: userRole,
+        questionId: key,
+        typedLen: text.length,
+        hasMeta: Boolean(meta),
+        meta,
+        timestamp: timestamp || null,
+      });
+      logInterviewQA("typed-answer-update:received", {
+        role: userRole,
+        questionId: key,
+        typedLen: text.length,
+        typedPreview: text.slice(0, 80),
+        timestamp: timestamp || null,
+      });
+
+      // Keep both sides consistent; interviewer needs this to generate report.
+      setQuestionTypedMap((prev) => ({ ...prev, [key]: text }));
+      if (meta && typeof meta === "object") {
+        // Write-through so report generation sees it immediately.
+        questionTypedMetaMapRef.current = {
+          ...(questionTypedMetaMapRef.current || {}),
+          [key]: meta,
+        };
+        logTypingDebug("socket:typed-answer-update:meta_written", {
+          role: userRole,
+          questionId: key,
+          refAfter: questionTypedMetaMapRef.current?.[key] || null,
+        });
+        setQuestionTypedMetaMap((prev) => ({ ...prev, [key]: meta }));
+      }
+
+      const activeId = getQuestionId(activeQuestionRef.current);
+      if (activeId && String(activeId) === key) {
+        setCurrentQuestionTyped(text);
+      }
+    });
+
+    // Typed answers handshake (used right before report generation)
+    socket.on("request-typed-answers", ({ requestId }) => {
+      if (userRole !== "candidate") return;
+      const rid = requestId || null;
+      const activeId = getQuestionId(activeQuestionRef.current);
+      const key = activeId == null || activeId === "" ? null : String(activeId);
+      const map = { ...(questionTypedMap || {}) };
+      if (key) {
+        map[key] = String(map[key] || currentQuestionTyped || "");
+      }
+      const metaMap = { ...(questionTypedMetaMapRef.current || {}) };
+      if (key) {
+        metaMap[key] = metaMap[key] || null;
+      }
+      console.log("⌨️ request-typed-answers (candidate):", {
+        requestId: rid,
+        keys: Object.keys(map),
+        sample: Object.entries(map)
+          .slice(0, 5)
+          .map(([k, v]) => ({ questionId: k, typedLen: String(v || "").length })),
+      });
+      logTypingDebug("socket:request-typed-answers:responding", {
+        role: userRole,
+        requestId: rid,
+        typedKeys: Object.keys(map),
+        metaKeys: Object.keys(metaMap || {}),
+        metaSample: Object.entries(metaMap || {})
+          .slice(0, 5)
+          .map(([k, v]) => ({ questionId: k, meta: v })),
+      });
+      socket.emit("typed-answers-response", {
+        roomId,
+        requestId: rid,
+        typedMap: map,
+        typedMetaMap: metaMap,
+        status: "ok",
+        timestamp: Date.now(),
+      });
+    });
+
+    socket.on("typed-answers-response", ({ requestId, typedMap, typedMetaMap, status }) => {
+      const rid = requestId || null;
+      if (!rid) return;
+      if (awaitingTypedSyncRequestRef.current !== rid) return;
+      console.log("⌨️ typed-answers-response (interviewer):", {
+        requestId: rid,
+        status,
+        keys: Object.keys(typedMap || {}),
+      });
+      logTypingDebug("socket:typed-answers-response:received", {
+        role: userRole,
+        requestId: rid,
+        status,
+        typedKeys: Object.keys(typedMap || {}),
+        metaKeys: Object.keys(typedMetaMap || {}),
+        metaSample: Object.entries(typedMetaMap || {})
+          .slice(0, 5)
+          .map(([k, v]) => ({ questionId: k, meta: v })),
+      });
+      if (typedMap && typeof typedMap === "object") {
+        setQuestionTypedMap((prev) => ({ ...(prev || {}), ...(typedMap || {}) }));
+      }
+      if (typedMetaMap && typeof typedMetaMap === "object") {
+        // Write-through so report generation sees it immediately.
+        questionTypedMetaMapRef.current = {
+          ...(questionTypedMetaMapRef.current || {}),
+          ...(typedMetaMap || {}),
+        };
+        logTypingDebug("socket:typed-answers-response:meta_written", {
+          role: userRole,
+          requestId: rid,
+          refKeys: Object.keys(questionTypedMetaMapRef.current || {}),
+        });
+        setQuestionTypedMetaMap((prev) => ({ ...(prev || {}), ...(typedMetaMap || {}) }));
+      }
+      awaitingTypedSyncRequestRef.current = null;
+    });
+
 
     // Set initial position for local video
     setPosition({ x: 16, y: 16 });
@@ -954,7 +1217,14 @@ socket.on("ready-to-call", async () => {
     socket.off("transcript-update");
     socket.off("force-transcription-flush");
     socket.off("transcription-flush-ack");
+    socket.off("typed-answer-update");
+    socket.off("request-typed-answers");
+    socket.off("typed-answers-response");
   }
+      if (typedEmitTimerRef.current) {
+        clearTimeout(typedEmitTimerRef.current);
+        typedEmitTimerRef.current = null;
+      }
       cleanupMedia();
     };
 }, [roomId, userRole, isMobile]);
@@ -1770,10 +2040,16 @@ useEffect(() => {
       const key = normKey(q.questionId);
       const answerEntry = key ? byQuestion.get(key) : null;
       const mapAnswer = key ? (questionTranscriptMapRef.current[key] || "") : "";
+      const typedAnswer = key ? (questionTypedMap[key] || "") : "";
+      const typedMeta = key
+        ? (questionTypedMetaMapRef.current?.[key] || questionTypedMetaMap[key] || null)
+        : null;
       return {
         questionId: q.questionId,
         questionText: q.questionText || answerEntry?.questionText || "",
         answer: (mapAnswer || answerEntry?.answer || "").trim(),
+        typedAnswer: String(typedAnswer || "").trim(),
+        typedMeta,
       };
     });
 
@@ -1783,6 +2059,7 @@ useEffect(() => {
         id: normKey(m.questionId),
         answerLen: (m.answer || "").length,
         answerPreview: (m.answer || "").slice(0, 100),
+        typedLen: (m.typedAnswer || "").length,
       })),
     });
 
@@ -1869,6 +2146,31 @@ useEffect(() => {
       recorder: getRecorderDebugState(),
     });
     if (socket && userRole === "interviewer") {
+      // 1) Ask candidate to send typed answers (so interviewer has them in state)
+      const typedRequestId = `typed-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      awaitingTypedSyncRequestRef.current = typedRequestId;
+      socket.emit("request-typed-answers", { roomId, requestId: typedRequestId });
+      await new Promise((resolve) => {
+        const startedAt = Date.now();
+        const poll = () => {
+          if (awaitingTypedSyncRequestRef.current !== typedRequestId) return resolve();
+          if (Date.now() - startedAt >= 1500) {
+            // timeout: proceed anyway
+            awaitingTypedSyncRequestRef.current = null;
+            return resolve();
+          }
+          setTimeout(poll, 50);
+        };
+        poll();
+      });
+
+      console.log("⌨️ Typed map before report build:", {
+        keys: Object.keys(questionTypedMap || {}),
+        sample: Object.entries(questionTypedMap || {})
+          .slice(0, 8)
+          .map(([k, v]) => ({ questionId: k, typedLen: String(v || "").length })),
+      });
+
       const requestId = `flush-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
       awaitingFlushAckRequestRef.current = requestId;
       socket.emit("force-transcription-flush", {
@@ -1915,25 +2217,135 @@ useEffect(() => {
       console.log("📝 Generating question-wise report for", answersByQuestion.length, "answers");
       const questionEvaluations = await evaluateQuestionWiseAnswers(answersByQuestion);
 
-      const totalScore = questionEvaluations.reduce(
+      // Add voice↔typed match and typed AI detection per question.
+      const questionEvaluationsWithTyped = await Promise.all(
+        questionEvaluations.map(async (item) => {
+          const spoken = String(item.answer || "").trim();
+          const typed = String(item.typedAnswer || "").trim();
+          if (!typed) {
+            return {
+              ...item,
+              voiceTypedMatch: null,
+              voiceTypedMatchBreakdown: null,
+              voiceTypedMatchInterpretation: "",
+              typedAiDetection: null,
+            };
+          }
+          let voiceTypedMatch = null;
+          let voiceTypedMatchBreakdown = null;
+          let voiceTypedMatchInterpretation = "";
+          try {
+            if (spoken) {
+              const r = await fetch("/api/compare-texts", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ textA: spoken, textB: typed }),
+              });
+              const d = await r.json();
+              if (d.success) {
+                voiceTypedMatch = d.similarity ?? null;
+                voiceTypedMatchBreakdown = d.breakdown || null;
+                voiceTypedMatchInterpretation = d.interpretation || "";
+              }
+            }
+          } catch {
+            voiceTypedMatch = null;
+          }
+
+          let typedAiDetection = null;
+          try {
+            const r = await fetch("/api/detect-ai-text", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ text: typed }),
+            });
+            const d = await r.json();
+            if (d.success) typedAiDetection = d.aiDetection || null;
+          } catch {
+            typedAiDetection = null;
+          }
+
+          return {
+            ...item,
+            voiceTypedMatch,
+            voiceTypedMatchBreakdown,
+            voiceTypedMatchInterpretation,
+            typedAiDetection,
+          };
+        })
+      );
+
+      // Ultra-verbose logging for debugging (requested)
+      console.log("🧾 === REPORT DEBUG (VOICE + TYPED) ===");
+      console.log("Typed map keys:", Object.keys(questionTypedMap || {}));
+      console.log(
+        "Typed map sample:",
+        Object.entries(questionTypedMap || {})
+          .slice(0, 10)
+          .map(([k, v]) => ({ questionId: k, typedLen: String(v || "").length, typedPreview: String(v || "").slice(0, 80) }))
+      );
+      console.log(
+        "Typed meta sample:",
+        Object.entries(questionTypedMetaMap || {})
+          .slice(0, 10)
+          .map(([k, v]) => ({ questionId: k, meta: v }))
+      );
+      console.log("Typed meta ref keys:", Object.keys(questionTypedMetaMapRef.current || {}));
+      console.log(
+        "Typed meta ref sample:",
+        Object.entries(questionTypedMetaMapRef.current || {})
+          .slice(0, 10)
+          .map(([k, v]) => ({ questionId: k, meta: v }))
+      );
+      console.log(
+        "Per-question merged (pre-normalize):",
+        questionEvaluationsWithTyped.map((q) => ({
+          questionId: q.questionId,
+          questionText: q.questionText,
+          spokenLen: String(q.answer || "").length,
+          typedLen: String(q.typedAnswer || "").length,
+          typedMeta: q.typedMeta || null,
+          voiceTypedMatch: q.voiceTypedMatch,
+          typedAi: q.typedAiDetection ? { label: q.typedAiDetection.label, confidence: q.typedAiDetection.confidence } : null,
+        }))
+      );
+      console.log("🧾 === END REPORT DEBUG ===");
+
+      const totalScore = questionEvaluationsWithTyped.reduce(
         (sum, item) => sum + (Number.isFinite(item.score) ? item.score : 0),
         0
       );
-      const overallScore = questionEvaluations.length
-        ? Math.round(totalScore / questionEvaluations.length)
+      const overallScore = questionEvaluationsWithTyped.length
+        ? Math.round(totalScore / questionEvaluationsWithTyped.length)
         : 0;
 
       const averageMetric = (metric) => {
-        const values = questionEvaluations
+        const values = questionEvaluationsWithTyped
           .map((q) => q.details?.scores?.[metric])
           .filter((value) => Number.isFinite(value));
         if (!values.length) return 0;
         return Math.round(values.reduce((a, b) => a + b, 0) / values.length);
       };
 
-      const aiDetections = questionEvaluations
+      const aiDetections = questionEvaluationsWithTyped
         .map((q) => q.aiDetection)
         .filter(Boolean);
+      const typedAiDetections = questionEvaluationsWithTyped
+        .map((q) => q.typedAiDetection)
+        .filter(Boolean);
+      const typedAiGeneratedCount = typedAiDetections.filter((x) => x.isAIGenerated).length;
+      const typedAverageAIConfidence = typedAiDetections.length
+        ? Math.round(
+            typedAiDetections.reduce((sum, x) => sum + (x.confidence || 0), 0) / typedAiDetections.length
+          )
+        : 0;
+
+      const voiceTypedMatches = questionEvaluationsWithTyped
+        .map((q) => q.voiceTypedMatch)
+        .filter((v) => Number.isFinite(v));
+      const averageVoiceTypedMatch = voiceTypedMatches.length
+        ? Math.round(voiceTypedMatches.reduce((a, b) => a + b, 0) / voiceTypedMatches.length)
+        : 0;
       const aiGeneratedCount = aiDetections.filter((item) => item.isAIGenerated).length;
       const averageAIConfidence = aiDetections.length
         ? Math.round(aiDetections.reduce((sum, item) => sum + (item.confidence || 0), 0) / aiDetections.length)
@@ -1958,11 +2370,17 @@ useEffect(() => {
             understanding: averageMetric("understanding"),
             clarity: averageMetric("clarity")
           },
+          typedAnswerMetrics: {
+            averageVoiceTypedMatch,
+            typedAnswersAnalyzed: typedAiDetections.length,
+            typedAiGeneratedCount,
+            typedAverageAIConfidence,
+          },
           feedback: `Question-wise evaluation complete for ${questionEvaluations.length} answers.`,
           strengths: [],
           weaknesses: []
         },
-        questionWise: questionEvaluations
+        questionWise: questionEvaluationsWithTyped
       });
 
         // Broadcast result to interviewee
@@ -2002,12 +2420,18 @@ useEffect(() => {
         
         console.log('⏱️ Interview Duration:', formattedDuration, '(', durationMs, 'ms)');
         console.log('❓ Total Questions Asked:', questionCount);
-        console.log("🤖 Question-wise AI detection count:", aiDetections.length);
+        console.log("🤖 Question-wise AI detection count:", aiDetections.length, "of", questionEvaluationsWithTyped.length);
+        console.log("⌨️ Typed answers present for", questionEvaluationsWithTyped.filter((q) => String(q.typedAnswer || '').trim()).length, "of", questionEvaluationsWithTyped.length);
 
-        const normalizedQuestionEvaluations = questionEvaluations.map((item) => ({
+        const normalizedQuestionEvaluations = questionEvaluationsWithTyped.map((item) => ({
           questionId: item.questionId,
           questionText: item.questionText,
           answer: item.answer,
+          typedAnswer: item.typedAnswer || "",
+          typedMeta: item.typedMeta || null,
+          voiceTypedMatch: item.voiceTypedMatch,
+          voiceTypedMatchBreakdown: item.voiceTypedMatchBreakdown || null,
+          voiceTypedMatchInterpretation: item.voiceTypedMatchInterpretation || "",
           score: Number.isFinite(item.score) ? item.score : 0,
           interpretation: item.interpretation || "",
           strengths: item.details?.strengths || [],
@@ -2015,7 +2439,8 @@ useEffect(() => {
           matchedConcepts: item.details?.matchedKeywords || [],
           missedConcepts: item.details?.missedConcepts || [],
           feedback: item.details?.feedback || "",
-          aiDetection: item.aiDetection || null
+          aiDetection: item.aiDetection || null,
+          typedAiDetection: item.typedAiDetection || null
         }));
 
         const reportPayload = {
@@ -2046,6 +2471,12 @@ useEffect(() => {
               questionCountAnalyzed: aiDetections.length,
               aiGeneratedCount,
               averageConfidence: averageAIConfidence
+            },
+            typedAiDetection: {
+              typedAnswersAnalyzed: typedAiDetections.length,
+              typedAiGeneratedCount,
+              typedAverageConfidence: typedAverageAIConfidence,
+              averageVoiceTypedMatch,
             },
             questionWiseResults: normalizedQuestionEvaluations
           },
@@ -2438,6 +2869,69 @@ useEffect(() => {
         plagiarismDetails={plagiarismDetails}
         isCheckingPlagiarism={isCheckingPlagiarism}
         transcript={currentQuestionTranscript}
+        typedAnswer={currentQuestionTyped}
+        onTypedAnswerChange={(value) => {
+          const qid = getQuestionId(currentQuestion);
+          const prevValue = currentQuestionTyped;
+          setCurrentQuestionTyped(value);
+          if (qid) {
+            ensureTypedMeta(qid);
+            setTypedForQuestion(qid, value);
+            // Fallback telemetry: if browser doesn't fire beforeinput reliably,
+            // estimate typing vs paste from delta length at change-time.
+            const nextValue = String(value || "");
+            const prevText = String(prevValue || "");
+            const delta = Math.max(0, nextValue.length - prevText.length);
+            logTypingDebug("onTypedAnswerChange", {
+              role: userRole,
+              questionId: String(qid),
+              prevLen: prevText.length,
+              nextLen: nextValue.length,
+              delta,
+            });
+            if (delta >= 5) {
+              recordTypingEvent(qid, { type: "paste", insertedTextLength: delta });
+            } else {
+              recordTypingEvent(qid, { type: "keystroke" });
+            }
+          }
+
+          // Candidate pushes typed updates to interviewer (debounced).
+          if (socket && roomId && userRole === "candidate" && qid) {
+            if (typedEmitTimerRef.current) clearTimeout(typedEmitTimerRef.current);
+            typedEmitTimerRef.current = setTimeout(() => {
+              try {
+                const metaNow = questionTypedMetaMapRef.current[String(qid)] || null;
+                logTypingDebug("typed-answer-update:emitting", {
+                  role: userRole,
+                  questionId: String(qid),
+                  typedLen: String(value || "").length,
+                  metaNow,
+                });
+                socket.emit("typed-answer-update", {
+                  roomId,
+                  questionId: qid,
+                  typedAnswer: String(value || ""),
+                  meta: metaNow,
+                  timestamp: Date.now(),
+                });
+                logInterviewQA("typed-answer-update:emitted", {
+                  questionId: String(qid),
+                  typedLen: String(value || "").length,
+                });
+              } catch {
+                // ignore
+              }
+            }, 250);
+          }
+        }}
+        onTypedInputEvent={(evt) => {
+          const qid = getQuestionId(currentQuestion);
+          if (!qid) return;
+          ensureTypedMeta(qid);
+          logTypingDebug("onTypedInputEvent", { role: userRole, questionId: String(qid), evt });
+          recordTypingEvent(qid, evt);
+        }}
         onStartTest={startTest}
         testStarted={testStarted}
         transcriptionEnabled={transcriptionEnabled}

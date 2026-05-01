@@ -828,7 +828,51 @@ const InterviewHistoryPage = () => {
                             <p className="text-sm text-white font-medium">Q{index + 1}. {result.questionText || 'Question'}</p>
                             <p className="text-sm font-bold text-purple-300">{result.score || 0}%</p>
                           </div>
-                          <p className="text-xs text-gray-400 mt-2">{result.answer || 'No answer captured'}</p>
+                          <p className="text-xs text-gray-400 mt-2 whitespace-pre-wrap">
+                            <span className="text-gray-500">Spoken:</span> {result.answer || 'No spoken answer captured'}
+                          </p>
+                          {result.typedAnswer && (
+                            <p className="text-xs text-gray-400 mt-2 whitespace-pre-wrap">
+                              <span className="text-gray-500">Typed:</span> {result.typedAnswer}
+                            </p>
+                          )}
+                          {result.typedMeta && (
+                            <p className="text-[11px] text-gray-400 mt-1 whitespace-pre-wrap">
+                              {(() => {
+                                const m = result.typedMeta;
+                                const activeSec = Math.round(((m.activeMs || 0) / 1000) * 10) / 10;
+                                const chars = String(result.typedAnswer || '').length;
+                                const wpm = activeSec > 0 ? Math.round((chars / 5) / (activeSec / 60)) : 0;
+                                const pasteFlag = (m.pasteCount || 0) > 0 || (m.pastedChars || 0) > 20;
+                                return `Typing: ${activeSec}s active | ${wpm} WPM (est) | keystrokes: ${m.keystrokes || 0} | pastes: ${m.pasteCount || 0} | pasted chars: ${m.pastedChars || 0}${pasteFlag ? ' | Paste suspected' : ''}`;
+                              })()}
+                            </p>
+                          )}
+                          {Number.isFinite(result.voiceTypedMatch) && (
+                            <p className="text-xs text-emerald-300 mt-2">
+                              Voice ↔ Typed match: <span className="font-semibold">{Math.round(result.voiceTypedMatch)}%</span>
+                            </p>
+                          )}
+                          {result.voiceTypedMatchBreakdown && (
+                            <p className="text-[11px] text-gray-400 mt-1 whitespace-pre-wrap">
+                              {Object.entries(result.voiceTypedMatchBreakdown)
+                                .map(([k, v]) => `${k}: ${Math.round((Number(v) || 0) * 10) / 10}%`)
+                                .join(' | ')}
+                            </p>
+                          )}
+                          {result.voiceTypedMatchInterpretation && (
+                            <p className="text-[11px] text-gray-500 mt-1">{result.voiceTypedMatchInterpretation}</p>
+                          )}
+                          {result.typedAiDetection?.confidence != null && (
+                            <p className="text-xs text-yellow-300 mt-2">
+                              Typed AI detection: {result.typedAiDetection.label || 'Unknown'} ({result.typedAiDetection.confidence || 0}%)
+                            </p>
+                          )}
+                          {Array.isArray(result.typedAiDetection?.allScores) && result.typedAiDetection.allScores.length > 0 && (
+                            <p className="text-[11px] text-gray-400 mt-1">
+                              Scores: {result.typedAiDetection.allScores.map((s) => `${s.label}: ${Math.round((s.score || 0) * 100)}%`).join(' | ')}
+                            </p>
+                          )}
                           {result.interpretation && (
                             <p className="text-xs text-gray-300 mt-2">{result.interpretation}</p>
                           )}

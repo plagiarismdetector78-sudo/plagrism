@@ -13,6 +13,9 @@ export default function QuestionPanel({
     plagiarismDetails,
     isCheckingPlagiarism,
     transcript, // This will be currentAnswer now
+    typedAnswer,
+    onTypedAnswerChange,
+    onTypedInputEvent,
     transcriptionEnabled,
     onNextQuestion,
     onPreviousQuestion,
@@ -172,6 +175,44 @@ export default function QuestionPanel({
                                             >
                                                 <i className="fas fa-arrow-right text-sm"></i>
                                             </button>
+                                        </div>
+                                    )}
+
+                                    {/* Typed Answer - Candidate Only */}
+                                    {userRole !== 'interviewer' && (
+                                        <div className="mt-4 pt-5 border-t border-white/10 relative z-30 flex-shrink-0">
+                                            <div className="flex items-center justify-between mb-2">
+                                                <div className="flex items-center space-x-2">
+                                                    <i className="fas fa-keyboard text-purple-300 text-xs"></i>
+                                                    <span className="text-[10px] uppercase tracking-[0.2em] text-gray-400 font-semibold">Typed Answer</span>
+                                                </div>
+                                                <span className="text-[10px] text-gray-500">
+                                                    {String(typedAnswer || '').length} chars
+                                                </span>
+                                            </div>
+                                            <textarea
+                                                value={typedAnswer || ''}
+                                                onChange={(e) => onTypedAnswerChange && onTypedAnswerChange(e.target.value)}
+                                                onBeforeInput={(e) => {
+                                                    const inputType = e?.nativeEvent?.inputType || '';
+                                                    if (!onTypedInputEvent) return;
+                                                    if (inputType === 'insertFromPaste' || inputType === 'insertFromDrop') {
+                                                        onTypedInputEvent({ type: 'paste' });
+                                                    } else if (String(inputType).startsWith('insert')) {
+                                                        onTypedInputEvent({ type: 'keystroke' });
+                                                    }
+                                                }}
+                                                onPaste={(e) => {
+                                                    const text = e.clipboardData?.getData('text') || '';
+                                                    onTypedInputEvent && onTypedInputEvent({ type: 'paste', insertedTextLength: text.length });
+                                                }}
+                                                placeholder="Type the same answer you are speaking (recommended)."
+                                                rows={4}
+                                                className="w-full px-4 py-3 bg-black/40 border border-white/15 rounded-xl text-white placeholder-gray-500 focus:ring-2 focus:ring-purple-500 focus:border-transparent resize-none"
+                                            />
+                                            <p className="mt-2 text-[11px] text-gray-500 leading-relaxed">
+                                                This helps verify consistency between spoken and typed responses and supports AI-authorship checks in the final report.
+                                            </p>
                                         </div>
                                     )}
                                 </div>
