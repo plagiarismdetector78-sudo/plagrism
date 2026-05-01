@@ -16,7 +16,6 @@ export default function QuestionPanel({
     typedAnswer,
     onTypedAnswerChange,
     onTypedInputEvent,
-    transcript,
     transcriptionEnabled,
     onNextQuestion,
     onPreviousQuestion,
