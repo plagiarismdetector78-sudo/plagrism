@@ -73,6 +73,7 @@ export default function MeetingPage() {
   const [plagiarismDetails, setPlagiarismDetails] = useState(null);
   const [isCheckingPlagiarism, setIsCheckingPlagiarism] = useState(false);
   const [showQuestionPanel, setShowQuestionPanel] = useState(true);
+  const [isPanelMinimized, setIsPanelMinimized] = useState(false);
   const [testStarted, setTestStarted] = useState(false);
   const [interviewId, setInterviewId] = useState(null);
   const [questionCategory, setQuestionCategory] = useState('Computer Science');
@@ -2946,23 +2947,49 @@ useEffect(() => {
         lockCategorySelection={Boolean(lockedCategory)}
         showPanel={showQuestionPanel}
         onTogglePanel={() => setShowQuestionPanel(!showQuestionPanel)}
+        isMinimized={isPanelMinimized}
       />
 
       {/* Minimal Control Bar */}
       <div className={`bg-black/80 backdrop-blur-md border-t border-white/10 transition-all duration-300 z-50 ${showControls ? 'translate-y-0' : 'translate-y-full'}`}>
         <div className="px-4 py-2.5">
           <div className="flex justify-between items-center max-w-6xl mx-auto">
-            {/* Left: Interview Panel Toggle */}
-            <button
-              onClick={() => setShowQuestionPanel(!showQuestionPanel)}
-              className={`flex items-center space-x-2 px-3 py-2 rounded-lg transition-all hover:scale-105 ${showQuestionPanel
-                ? 'bg-purple-600/80 hover:bg-purple-500/80 text-white'
-                : 'bg-gray-700/80 hover:bg-gray-600/80 text-gray-300'
-                }`}
-            >
-              <i className={`fas fa-${showQuestionPanel ? 'chevron-down' : 'chevron-up'} text-sm`}></i>
-              <span className="text-xs font-semibold hidden sm:inline">Interview Panel</span>
-            </button>
+            {/* Left: Interview Panel Toggle + Minimize */}
+            <div className="flex items-center space-x-1">
+              <button
+                onClick={() => {
+                  if (!showQuestionPanel) {
+                    setShowQuestionPanel(true);
+                    setIsPanelMinimized(false);
+                  } else {
+                    setShowQuestionPanel(!showQuestionPanel);
+                  }
+                }}
+                className={`flex items-center space-x-2 px-3 py-2 rounded-lg transition-all hover:scale-105 ${showQuestionPanel
+                  ? 'bg-purple-600/80 hover:bg-purple-500/80 text-white'
+                  : 'bg-gray-700/80 hover:bg-gray-600/80 text-gray-300'
+                  }`}
+              >
+                <i className={`fas fa-${showQuestionPanel ? 'chevron-down' : 'chevron-up'} text-sm`}></i>
+                <span className="text-xs font-semibold hidden sm:inline">Interview Panel</span>
+              </button>
+
+              {/* Minimize / Restore — only shown when panel is open */}
+              {showQuestionPanel && (
+                <button
+                  onClick={() => setIsPanelMinimized(v => !v)}
+                  title={isPanelMinimized ? 'Restore panel' : 'Minimize panel'}
+                  className={`flex items-center space-x-1.5 px-3 py-2 rounded-lg transition-all hover:scale-105 text-xs font-semibold ${
+                    isPanelMinimized
+                      ? 'bg-purple-500/80 hover:bg-purple-400/80 text-white'
+                      : 'bg-gray-700/80 hover:bg-gray-600/80 text-gray-300'
+                  }`}
+                >
+                  <i className={`fas fa-${isPanelMinimized ? 'expand-alt' : 'compress-alt'} text-sm`}></i>
+                  <span className="hidden sm:inline">{isPanelMinimized ? 'Restore' : 'Minimize'}</span>
+                </button>
+              )}
+            </div>
 
             {/* Center: Main Controls */}
             <div className="flex items-center space-x-2">
