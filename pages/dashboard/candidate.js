@@ -64,29 +64,28 @@ const { data, error, mutate } = useSWR(
   }, [data]);
 
 
-  // Filter interviews based on active tab
- const filteredInterviews = normalizedInterviews.filter(interview => {
-
+  // Filter interviews based on active tab (status is the same DB field the interviewer sees)
+  const filteredInterviews = normalizedInterviews.filter((interview) => {
     const now = new Date();
     const scheduledDate = interview.scheduledAt ? new Date(interview.scheduledAt) : null;
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const tomorrow = new Date(today);
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    
+    const st = normalizeStatus(interview.status);
+
     switch (activeTab) {
       case 'upcoming':
-        // Show only today's upcoming interviews
-        return scheduledDate && 
-               scheduledDate >= today && 
-               scheduledDate < tomorrow && 
-               scheduledDate > now &&
-               normalizeStatus(interview.status) !== 'cancelled' &&
-               normalizeStatus(interview.status) !== 'completed';
+        // Any future interview (not only "today") — same idea as interviewer "scheduled / upcoming"
+        return (
+          scheduledDate &&
+          scheduledDate > now &&
+          st !== 'cancelled' &&
+          st !== 'completed' &&
+          st !== 'pending'
+        );
+      case 'pending':
+        return st === 'pending';
       case 'completed':
-        return normalizeStatus(interview.status) === 'completed';
+        return st === 'completed';
       case 'cancelled':
-        return normalizeStatus(interview.status) === 'cancelled';
+        return st === 'cancelled';
       case 'all':
       default:
         return true;
@@ -209,22 +208,29 @@ const fetchProfile = async (uid) => {
 
   const getStatusColor = (status, scheduledAt) => {
     const normalized = normalizeStatus(status);
-    if (!scheduledAt) return 'bg-yellow-500/20 text-yellow-300 border-yellow-500/30';
-    const scheduledDate = new Date(scheduledAt);
-    const now = new Date();
     if (normalized === 'completed') return 'bg-green-500/20 text-green-300 border-green-500/30';
     if (normalized === 'cancelled') return 'bg-red-500/20 text-red-300 border-red-500/30';
+    if (normalized === 'pending') return 'bg-yellow-500/20 text-yellow-300 border-yellow-500/30';
+    if (!scheduledAt) return 'bg-gray-500/20 text-gray-300 border-gray-500/30';
+    const scheduledDate = new Date(scheduledAt);
+    const now = new Date();
     if (scheduledDate > now) return 'bg-blue-500/20 text-blue-300 border-blue-500/30';
-    return 'bg-yellow-500/20 text-yellow-300 border-yellow-500/30';
+    return 'bg-amber-500/20 text-amber-200 border-amber-500/30';
   };
 
   const getStatusText = (status, scheduledAt) => {
     const normalized = normalizeStatus(status);
-    if (!scheduledAt) return 'Pending';
-    const scheduledDate = new Date(scheduledAt);
-    const now = new Date();
     if (normalized === 'completed') return 'Completed';
     if (normalized === 'cancelled') return 'Cancelled';
+    if (normalized === 'pending') return 'Pending';
+    if (normalized === 'in_progress' || normalized === 'in progress') return 'In progress';
+    if (normalized === 'scheduled') {
+      if (scheduledAt && new Date(scheduledAt) > new Date()) return 'Scheduled';
+      return 'Pending';
+    }
+    if (!scheduledAt) return status ? String(status) : 'Unknown';
+    const scheduledDate = new Date(scheduledAt);
+    const now = new Date();
     if (scheduledDate > now) return 'Scheduled';
     return 'Pending';
   };
@@ -242,8 +248,9 @@ const fetchProfile = async (uid) => {
     const now = new Date();
     const expiredInterviews = interviews.filter(interview => {
       const status = normalizeStatus(interview.status);
-      if (!interview.scheduledAt || status === 'completed' || status === 'cancelled' || status === 'pending') return false;
-      const scheduledDate = new Date(interview.scheduledAt);
+      const scheduledRaw = interview.scheduledAt ?? interview.scheduled_at;
+      if (!scheduledRaw || status === 'completed' || status === 'cancelled' || status === 'pending') return false;
+      const scheduledDate = new Date(scheduledRaw);
       const duration = interview.duration || 60;
       const endTime = new Date(scheduledDate.getTime() + duration * 60000);
       return endTime < now;
@@ -279,13 +286,19 @@ const fetchProfile = async (uid) => {
   }, [interviews]);
 
   const stats = {
-  total: normalizedInterviews.length,
-  upcoming: normalizedInterviews.filter(
-    i => i.scheduledAt && new Date(i.scheduledAt) > new Date() && !['completed', 'cancelled'].includes(normalizeStatus(i.status))
-  ).length,
-  completed: normalizedInterviews.filter(i => normalizeStatus(i.status) === 'completed').length,
-  cancelled: normalizedInterviews.filter(i => normalizeStatus(i.status) === 'cancelled').length,
-};
+    total: normalizedInterviews.length,
+    upcoming: normalizedInterviews.filter((i) => {
+      const st = normalizeStatus(i.status);
+      return (
+        i.scheduledAt &&
+        new Date(i.scheduledAt) > new Date() &&
+        !['completed', 'cancelled', 'pending'].includes(st)
+      );
+    }).length,
+    pending: normalizedInterviews.filter((i) => normalizeStatus(i.status) === 'pending').length,
+    completed: normalizedInterviews.filter((i) => normalizeStatus(i.status) === 'completed').length,
+    cancelled: normalizedInterviews.filter((i) => normalizeStatus(i.status) === 'cancelled').length,
+  };
 
 
   // UI for loading / errors (SWR)
@@ -353,7 +366,7 @@ const fetchProfile = async (uid) => {
             </div>
 
             {/* Stats Cards */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6 md:mb-8">
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4 mb-6 md:mb-8">
               <div className="backdrop-blur-xl bg-white/5 rounded-2xl border border-white/10 p-4 md:p-6 hover:border-purple-500/30 transition-all duration-300">
                 <div className="flex items-center justify-between">
                   <div>
@@ -376,6 +389,20 @@ const fetchProfile = async (uid) => {
                   </div>
                   <div className="w-10 h-10 md:w-12 md:h-12 bg-green-500/20 rounded-xl flex items-center justify-center">
                     <svg className="w-5 h-5 md:w-6 md:h-6 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                  </div>
+                </div>
+              </div>
+
+              <div className="backdrop-blur-xl bg-white/5 rounded-2xl border border-white/10 p-4 md:p-6 hover:border-purple-500/30 transition-all duration-300">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-gray-400">Pending</p>
+                    <p className="text-2xl font-bold text-white">{stats.pending}</p>
+                  </div>
+                  <div className="w-10 h-10 md:w-12 md:h-12 bg-amber-500/20 rounded-xl flex items-center justify-center">
+                    <svg className="w-5 h-5 md:w-6 md:h-6 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                     </svg>
                   </div>
@@ -429,8 +456,8 @@ const fetchProfile = async (uid) => {
                 </div>
 
                 {/* Tabs */}
-                <div className="flex space-x-1 bg-white/10 rounded-xl p-1">
-                  {['upcoming', 'completed', 'cancelled', 'all'].map((tab) => (
+                <div className="flex flex-wrap gap-1 bg-white/10 rounded-xl p-1">
+                  {['upcoming', 'pending', 'completed', 'cancelled', 'all'].map((tab) => (
                     <button
                       key={tab}
                       onClick={() => setActiveTab(tab)}

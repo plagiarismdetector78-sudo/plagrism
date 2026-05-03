@@ -108,22 +108,29 @@ const InterviewsPage = () => {
 
   const getStatusColor = (status, scheduledAt) => {
     const normalized = normalizeStatus(status);
-    if (!scheduledAt) return 'bg-yellow-500/20 text-yellow-300 border-yellow-500/30';
-    const scheduledDate = new Date(scheduledAt);
-    const now = new Date();
     if (normalized === 'completed') return 'bg-green-500/20 text-green-300 border-green-500/30';
     if (normalized === 'cancelled') return 'bg-red-500/20 text-red-300 border-red-500/30';
+    if (normalized === 'pending') return 'bg-yellow-500/20 text-yellow-300 border-yellow-500/30';
+    if (!scheduledAt) return 'bg-gray-500/20 text-gray-300 border-gray-500/30';
+    const scheduledDate = new Date(scheduledAt);
+    const now = new Date();
     if (scheduledDate > now) return 'bg-blue-500/20 text-blue-300 border-blue-500/30';
-    return 'bg-gray-500/20 text-gray-300 border-gray-500/30';
+    return 'bg-amber-500/20 text-amber-200 border-amber-500/30';
   };
 
   const getStatusText = (status, scheduledAt) => {
     const normalized = normalizeStatus(status);
-    if (!scheduledAt) return 'Pending';
-    const scheduledDate = new Date(scheduledAt);
-    const now = new Date();
     if (normalized === 'completed') return 'Completed';
     if (normalized === 'cancelled') return 'Cancelled';
+    if (normalized === 'pending') return 'Pending';
+    if (normalized === 'in_progress' || normalized === 'in progress') return 'In progress';
+    if (normalized === 'scheduled') {
+      if (scheduledAt && new Date(scheduledAt) > new Date()) return 'Scheduled';
+      return 'Pending';
+    }
+    if (!scheduledAt) return status ? String(status) : 'Unknown';
+    const scheduledDate = new Date(scheduledAt);
+    const now = new Date();
     if (scheduledDate > now) return 'Scheduled';
     return 'Pending';
   };
@@ -146,17 +153,23 @@ const InterviewsPage = () => {
   const filteredInterviews = interviews.filter(interview => {
     const now = new Date();
     const scheduledDate = interview.scheduledAt ? new Date(interview.scheduledAt) : null;
+    const st = normalizeStatus(interview.status);
     
-    // Filter by status
+    // Filter by status (aligned with /dashboard/candidate)
     let matchesFilter = false;
     if (activeFilter === 'all') {
       matchesFilter = true;
     } else if (activeFilter === 'upcoming') {
-      matchesFilter = scheduledDate && scheduledDate > now && !['cancelled', 'completed'].includes(normalizeStatus(interview.status));
+      matchesFilter =
+        scheduledDate &&
+        scheduledDate > now &&
+        !['cancelled', 'completed', 'pending'].includes(st);
+    } else if (activeFilter === 'pending') {
+      matchesFilter = st === 'pending';
     } else if (activeFilter === 'completed') {
-      matchesFilter = normalizeStatus(interview.status) === 'completed';
-    } else if (activeFilter === 'past') {
-      matchesFilter = scheduledDate && scheduledDate <= now && normalizeStatus(interview.status) !== 'cancelled';
+      matchesFilter = st === 'completed';
+    } else if (activeFilter === 'cancelled') {
+      matchesFilter = st === 'cancelled';
     }
     
     // Search filter
@@ -169,9 +182,17 @@ const InterviewsPage = () => {
 
   const stats = {
     total: interviews.length,
-    upcoming: interviews.filter(i => i.scheduledAt && new Date(i.scheduledAt) > new Date() && !['completed', 'cancelled'].includes(normalizeStatus(i.status))).length,
-    completed: interviews.filter(i => normalizeStatus(i.status) === 'completed').length,
-    past: interviews.filter(i => i.scheduledAt && new Date(i.scheduledAt) <= new Date() && normalizeStatus(i.status) !== 'cancelled').length,
+    upcoming: interviews.filter((i) => {
+      const st = normalizeStatus(i.status);
+      return (
+        i.scheduledAt &&
+        new Date(i.scheduledAt) > new Date() &&
+        !['completed', 'cancelled', 'pending'].includes(st)
+      );
+    }).length,
+    pending: interviews.filter((i) => normalizeStatus(i.status) === 'pending').length,
+    completed: interviews.filter((i) => normalizeStatus(i.status) === 'completed').length,
+    cancelled: interviews.filter((i) => normalizeStatus(i.status) === 'cancelled').length,
   };
 
   return (
@@ -225,6 +246,16 @@ const InterviewsPage = () => {
                 Upcoming
               </button>
               <button
+                onClick={() => setActiveFilter('pending')}
+                className={`px-4 py-2 rounded-xl text-sm font-medium transition-all duration-300 ${
+                  activeFilter === 'pending'
+                    ? 'bg-gradient-to-r from-purple-500 to-pink-500 text-white shadow-lg'
+                    : 'text-gray-400 hover:text-white hover:bg-white/5'
+                }`}
+              >
+                Pending
+              </button>
+              <button
                 onClick={() => setActiveFilter('completed')}
                 className={`px-4 py-2 rounded-xl text-sm font-medium transition-all duration-300 ${
                   activeFilter === 'completed'
@@ -235,24 +266,25 @@ const InterviewsPage = () => {
                 Completed
               </button>
               <button
-                onClick={() => setActiveFilter('past')}
+                onClick={() => setActiveFilter('cancelled')}
                 className={`px-4 py-2 rounded-xl text-sm font-medium transition-all duration-300 ${
-                  activeFilter === 'past'
+                  activeFilter === 'cancelled'
                     ? 'bg-gradient-to-r from-purple-500 to-pink-500 text-white shadow-lg'
                     : 'text-gray-400 hover:text-white hover:bg-white/5'
                 }`}
               >
-                Past
+                Cancelled
               </button>
             </div>
             
             {/* Stats */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4 mb-6">
               {[
                 { label: 'Total', value: stats.total, color: 'blue' },
                 { label: 'Upcoming', value: stats.upcoming, color: 'green' },
+                { label: 'Pending', value: stats.pending, color: 'yellow' },
                 { label: 'Completed', value: stats.completed, color: 'purple' },
-                { label: 'Past', value: stats.past, color: 'orange' },
+                { label: 'Cancelled', value: stats.cancelled, color: 'red' },
               ].map((stat, index) => (
                 <div key={index} className="backdrop-blur-xl bg-white/5 rounded-2xl border border-white/10 p-4 hover:border-purple-500/30 transition-all duration-300">
                   <div className="flex items-center justify-between">
