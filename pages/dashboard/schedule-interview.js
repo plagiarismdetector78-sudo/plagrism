@@ -6,17 +6,14 @@ import Sidebar from "../../components/Sidebar";
 import Navbar from "../../components/Navbar";
 
 const ScheduleInterviewPage = () => {
-  const POSITION_OPTIONS = [
-    "Computer Science",
-    "Software Engineering",
-    "Cyber Security",
-  ];
+  const DEFAULT_FIELDS = ["Computer Science", "Software Engineering", "Cyber Security"];
 
   const router = useRouter();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [candidates, setCandidates] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedCandidate, setSelectedCandidate] = useState(null);
+  const [fieldOptions, setFieldOptions] = useState(DEFAULT_FIELDS);
 
   const [scheduleData, setScheduleData] = useState({
     scheduledAt: "",
@@ -54,6 +51,22 @@ const ScheduleInterviewPage = () => {
     if (savedState === "true") setSidebarCollapsed(true);
 
     fetchCandidates();
+    (async () => {
+      try {
+        const res = await fetch("/api/question-categories");
+        const data = await res.json();
+        if (data.success && Array.isArray(data.categories) && data.categories.length > 0) {
+          setFieldOptions(data.categories);
+          // Keep selection valid
+          setScheduleData((prev) => ({
+            ...prev,
+            position: data.categories.includes(prev.position) ? prev.position : data.categories[0],
+          }));
+        }
+      } catch (e) {
+        // fall back to defaults silently
+      }
+    })();
   }, []);
 
   const toggleSidebar = () => {
@@ -236,7 +249,7 @@ const ScheduleInterviewPage = () => {
                       }
                       className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white focus:ring-2 focus:ring-purple-500"
                     >
-                      {POSITION_OPTIONS.map((option) => (
+                      {fieldOptions.map((option) => (
                         <option key={option} value={option} className="bg-gray-900">
                           {option}
                         </option>

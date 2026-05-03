@@ -801,21 +801,7 @@ const InterviewHistoryPage = () => {
                   </div>
                 </div>
 
-                {/* AI Detection */}
-                {reportData.evaluation_data?.aiDetection && (
-                  <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-xl p-4">
-                    <h5 className="text-sm font-medium text-yellow-400 mb-2">AI Usage Detection</h5>
-                    <p className="text-white">
-                      {reportData.evaluation_data.aiDetection.probability
-                        ? `Probability: ${reportData.evaluation_data.aiDetection.probability}%`
-                        : `AI-flagged answers: ${reportData.evaluation_data.aiDetection.aiGeneratedCount || 0}/${reportData.evaluation_data.aiDetection.questionCountAnalyzed || 0}`}
-                    </p>
-                    <p className="text-gray-300 text-sm mt-2">
-                      {reportData.evaluation_data.aiDetection.explanation ||
-                        `Average confidence: ${reportData.evaluation_data.aiDetection.averageConfidence || 0}%`}
-                    </p>
-                  </div>
-                )}
+                {/* Legacy global AI Detection block removed (Groq is per-question typed AI risk). */}
 
                 {/* Question-wise Results */}
                 {reportData.evaluation_data?.questionWiseResults?.length > 0 && (
@@ -826,7 +812,10 @@ const InterviewHistoryPage = () => {
                         <div key={`${result.questionId}-${index}`} className="bg-black/30 rounded-lg p-3 border border-white/10">
                           <div className="flex justify-between items-start gap-3">
                             <p className="text-sm text-white font-medium">Q{index + 1}. {result.questionText || 'Question'}</p>
-                            <p className="text-sm font-bold text-purple-300">{result.score || 0}%</p>
+                            <div className="text-right">
+                              <p className="text-sm font-bold text-purple-300">{result.score || 0}%</p>
+                              <p className="text-[10px] text-gray-500 leading-tight">spoken vs expected</p>
+                            </div>
                           </div>
                           <p className="text-xs text-gray-400 mt-2 whitespace-pre-wrap">
                             <span className="text-gray-500">Spoken:</span> {result.answer || 'No spoken answer captured'}
@@ -865,12 +854,17 @@ const InterviewHistoryPage = () => {
                           )}
                           {result.typedAiDetection?.confidence != null && (
                             <p className="text-xs text-yellow-300 mt-2">
-                              Typed AI detection: {result.typedAiDetection.label || 'Unknown'} ({result.typedAiDetection.confidence || 0}%)
+                              Typed AI risk: {result.typedAiDetection.label || 'Unknown'} ({result.typedAiDetection.confidence || 0}%)
                             </p>
                           )}
-                          {Array.isArray(result.typedAiDetection?.allScores) && result.typedAiDetection.allScores.length > 0 && (
+                          {result.typedAiDetection?.pasteSuspected != null && (
                             <p className="text-[11px] text-gray-400 mt-1">
-                              Scores: {result.typedAiDetection.allScores.map((s) => `${s.label}: ${Math.round((s.score || 0) * 100)}%`).join(' | ')}
+                              Paste suspected: {result.typedAiDetection.pasteSuspected ? 'Yes' : 'No'}
+                            </p>
+                          )}
+                          {Array.isArray(result.typedAiDetection?.reasons) && result.typedAiDetection.reasons.length > 0 && (
+                            <p className="text-[11px] text-gray-400 mt-1 whitespace-pre-wrap">
+                              Reasons: {result.typedAiDetection.reasons.join(' | ')}
                             </p>
                           )}
                           {result.interpretation && (

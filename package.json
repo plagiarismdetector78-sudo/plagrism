@@ -6,7 +6,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "test:groq": "node scripts/test-groq-eval.mjs",
+    "test:groq:raw": "node scripts/test-groq-eval.mjs --raw-only"
   },
   "dependencies": {
     "@huggingface/inference": "^4.13.10",

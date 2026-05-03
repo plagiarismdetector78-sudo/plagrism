@@ -2006,6 +2006,28 @@ useEffect(() => {
   const buildQuestionAnswerPayload = () => {
     const normKey = (id) => (id == null || id === "" ? null : String(id));
 
+    const computeTextSimilarityPercent = (a, b) => {
+      const s1 = String(a || "").toLowerCase().trim();
+      const s2 = String(b || "").toLowerCase().trim();
+      if (!s1 || !s2) return null;
+
+      const toTokens = (s) =>
+        s
+          .replace(/[^a-z0-9\s]/g, " ")
+          .split(/\s+/)
+          .map((t) => t.trim())
+          .filter((t) => t.length >= 3);
+
+      const A = new Set(toTokens(s1));
+      const B = new Set(toTokens(s2));
+      if (!A.size || !B.size) return 0;
+      let inter = 0;
+      for (const t of A) if (B.has(t)) inter++;
+      const union = A.size + B.size - inter;
+      const jacc = union ? inter / union : 0;
+      return Math.round(jacc * 100);
+    };
+
     const compiled = [...questionAnswers];
 
     // Always include latest active question answer before generating report
@@ -2045,12 +2067,14 @@ useEffect(() => {
       const typedMeta = key
         ? (questionTypedMetaMapRef.current?.[key] || questionTypedMetaMap[key] || null)
         : null;
+      const voiceTypedMatch = computeTextSimilarityPercent(mapAnswer || answerEntry?.answer, typedAnswer);
       return {
         questionId: q.questionId,
         questionText: q.questionText || answerEntry?.questionText || "",
         answer: (mapAnswer || answerEntry?.answer || "").trim(),
         typedAnswer: String(typedAnswer || "").trim(),
         typedMeta,
+        voiceTypedMatch,
       };
     });
 
@@ -2095,31 +2119,80 @@ useEffect(() => {
           };
         }
         try {
-          const response = await fetch("/api/calculate-plagiarism", {
+          // Use Groq LLM for per-question evaluation (alignment + integrity).
+          console.log("🧪 Groq eval request payload", {
+            questionId: qa.questionId,
+            spokenLen: String(qa.answer || "").length,
+            typedLen: String(qa.typedAnswer || "").length,
+            voiceTypedMatch: qa.voiceTypedMatch ?? null,
+            hasTypedMeta: Boolean(qa.typedMeta),
+          });
+          const response = await fetch("/api/groq-evaluate-question", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               questionId: qa.questionId,
-              transcribedAnswer: qa.answer
-            })
+              spokenAnswer: qa.answer,
+              typedAnswer: qa.typedAnswer,
+              voiceTypedSimilarity: qa.voiceTypedMatch ?? null,
+              typedMeta: qa.typedMeta || null,
+            }),
           });
 
           const data = await response.json();
           if (!data.success) {
+            console.warn("⚠️ Groq eval failed for question", qa.questionId, {
+              message: data.message,
+              code: data.code,
+              rawPreview: String(data.raw || "").slice(0, 200),
+            });
             return {
               ...qa,
               score: 0,
-              interpretation: data.message || "Evaluation failed",
-              details: {}
+              interpretation: data.message || "Groq evaluation failed",
+              details: {},
+              groq: null,
+              groqError: { message: data.message, code: data.code || null },
             };
           }
 
+          const groq = data.analysis;
+          const score = groq?.spoken_expected_alignment?.score ?? 0;
+
           return {
             ...qa,
-            score: data.plagiarismScore ?? 0,
-            interpretation: data.interpretation || "",
-            details: data.details || {},
-            aiDetection: data.aiDetection || data.details?.aiDetection || null
+            score,
+            interpretation: (groq?.overall_notes || []).join(" ") || "",
+            details: {
+              strengths: groq?.spoken_expected_alignment?.reasons || [],
+              weaknesses: [],
+              matchedKeywords: [],
+              missedConcepts: groq?.spoken_expected_alignment?.missing_key_points || [],
+              feedback: (groq?.overall_notes || []).join("\n"),
+              scores: {
+                accuracy: score,
+                completeness: score,
+                understanding: score,
+                clarity: score,
+              },
+              evaluationType: "groq-llm",
+            },
+            aiDetection: null,
+            typedAiDetection: groq?.typed_authorship_risk
+              ? {
+                  isAIGenerated: groq.typed_authorship_risk.level === "high",
+                  confidence: groq.typed_authorship_risk.confidence,
+                  label: `Risk:${groq.typed_authorship_risk.level}`,
+                  reasons: groq.typed_authorship_risk.reasons,
+                  pasteSuspected: groq.typed_authorship_risk.paste_suspected,
+                }
+              : null,
+            voiceTypedMatch: groq?.voice_typed_consistency?.score ?? qa.voiceTypedMatch ?? null,
+            voiceTypedMatchInterpretation:
+              (groq?.voice_typed_consistency?.reasons || []).join(" ") ||
+              qa.voiceTypedMatchInterpretation ||
+              "",
+            groq,
           };
         } catch (error) {
           console.error("❌ Question-wise evaluation failed:", qa.questionId, error);
@@ -2218,63 +2291,8 @@ useEffect(() => {
       console.log("📝 Generating question-wise report for", answersByQuestion.length, "answers");
       const questionEvaluations = await evaluateQuestionWiseAnswers(answersByQuestion);
 
-      // Add voice↔typed match and typed AI detection per question.
-      const questionEvaluationsWithTyped = await Promise.all(
-        questionEvaluations.map(async (item) => {
-          const spoken = String(item.answer || "").trim();
-          const typed = String(item.typedAnswer || "").trim();
-          if (!typed) {
-            return {
-              ...item,
-              voiceTypedMatch: null,
-              voiceTypedMatchBreakdown: null,
-              voiceTypedMatchInterpretation: "",
-              typedAiDetection: null,
-            };
-          }
-          let voiceTypedMatch = null;
-          let voiceTypedMatchBreakdown = null;
-          let voiceTypedMatchInterpretation = "";
-          try {
-            if (spoken) {
-              const r = await fetch("/api/compare-texts", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ textA: spoken, textB: typed }),
-              });
-              const d = await r.json();
-              if (d.success) {
-                voiceTypedMatch = d.similarity ?? null;
-                voiceTypedMatchBreakdown = d.breakdown || null;
-                voiceTypedMatchInterpretation = d.interpretation || "";
-              }
-            }
-          } catch {
-            voiceTypedMatch = null;
-          }
-
-          let typedAiDetection = null;
-          try {
-            const r = await fetch("/api/detect-ai-text", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ text: typed }),
-            });
-            const d = await r.json();
-            if (d.success) typedAiDetection = d.aiDetection || null;
-          } catch {
-            typedAiDetection = null;
-          }
-
-          return {
-            ...item,
-            voiceTypedMatch,
-            voiceTypedMatchBreakdown,
-            voiceTypedMatchInterpretation,
-            typedAiDetection,
-          };
-        })
-      );
+      // Groq evaluation already includes voice↔typed and typed-authorship risk.
+      const questionEvaluationsWithTyped = questionEvaluations;
 
       // Ultra-verbose logging for debugging (requested)
       console.log("🧾 === REPORT DEBUG (VOICE + TYPED) ===");
@@ -2308,6 +2326,9 @@ useEffect(() => {
           typedMeta: q.typedMeta || null,
           voiceTypedMatch: q.voiceTypedMatch,
           typedAi: q.typedAiDetection ? { label: q.typedAiDetection.label, confidence: q.typedAiDetection.confidence } : null,
+          groqAlignment: q.groq?.spoken_expected_alignment?.score ?? null,
+          groqConsistency: q.groq?.voice_typed_consistency?.score ?? null,
+          groqRisk: q.groq?.typed_authorship_risk?.level ?? null,
         }))
       );
       console.log("🧾 === END REPORT DEBUG ===");
@@ -2328,17 +2349,13 @@ useEffect(() => {
         return Math.round(values.reduce((a, b) => a + b, 0) / values.length);
       };
 
-      const aiDetections = questionEvaluationsWithTyped
-        .map((q) => q.aiDetection)
-        .filter(Boolean);
       const typedAiDetections = questionEvaluationsWithTyped
         .map((q) => q.typedAiDetection)
         .filter(Boolean);
-      const typedAiGeneratedCount = typedAiDetections.filter((x) => x.isAIGenerated).length;
+      const typedHighRiskCount = typedAiDetections.filter((x) => String(x.label || "").toLowerCase().includes("risk:high")).length;
+      const typedMediumRiskCount = typedAiDetections.filter((x) => String(x.label || "").toLowerCase().includes("risk:medium")).length;
       const typedAverageAIConfidence = typedAiDetections.length
-        ? Math.round(
-            typedAiDetections.reduce((sum, x) => sum + (x.confidence || 0), 0) / typedAiDetections.length
-          )
+        ? Math.round(typedAiDetections.reduce((sum, x) => sum + (x.confidence || 0), 0) / typedAiDetections.length)
         : 0;
 
       const voiceTypedMatches = questionEvaluationsWithTyped
@@ -2347,10 +2364,7 @@ useEffect(() => {
       const averageVoiceTypedMatch = voiceTypedMatches.length
         ? Math.round(voiceTypedMatches.reduce((a, b) => a + b, 0) / voiceTypedMatches.length)
         : 0;
-      const aiGeneratedCount = aiDetections.filter((item) => item.isAIGenerated).length;
-      const averageAIConfidence = aiDetections.length
-        ? Math.round(aiDetections.reduce((sum, item) => sum + (item.confidence || 0), 0) / aiDetections.length)
-        : 0;
+      // Spoken-answer AI detection is now Groq-driven; we do not compute a separate HF aiDetection aggregate.
 
       const overallInterpretation =
         overallScore >= 80
@@ -2374,7 +2388,8 @@ useEffect(() => {
           typedAnswerMetrics: {
             averageVoiceTypedMatch,
             typedAnswersAnalyzed: typedAiDetections.length,
-            typedAiGeneratedCount,
+            typedAiHighRiskCount: typedHighRiskCount,
+            typedAiMediumRiskCount: typedMediumRiskCount,
             typedAverageAIConfidence,
           },
           feedback: `Question-wise evaluation complete for ${questionEvaluations.length} answers.`,
@@ -2421,7 +2436,7 @@ useEffect(() => {
         
         console.log('⏱️ Interview Duration:', formattedDuration, '(', durationMs, 'ms)');
         console.log('❓ Total Questions Asked:', questionCount);
-        console.log("🤖 Question-wise AI detection count:", aiDetections.length, "of", questionEvaluationsWithTyped.length);
+        console.log("🤖 Groq typed-authorship risk analyzed:", typedAiDetections.length, "of", questionEvaluationsWithTyped.length);
         console.log("⌨️ Typed answers present for", questionEvaluationsWithTyped.filter((q) => String(q.typedAnswer || '').trim()).length, "of", questionEvaluationsWithTyped.length);
 
         const normalizedQuestionEvaluations = questionEvaluationsWithTyped.map((item) => ({
@@ -2440,7 +2455,6 @@ useEffect(() => {
           matchedConcepts: item.details?.matchedKeywords || [],
           missedConcepts: item.details?.missedConcepts || [],
           feedback: item.details?.feedback || "",
-          aiDetection: item.aiDetection || null,
           typedAiDetection: item.typedAiDetection || null
         }));
 
@@ -2468,14 +2482,10 @@ useEffect(() => {
             weaknesses: [],
             matchedConcepts: [],
             feedback: `Generated from question-wise similarity analysis of ${normalizedQuestionEvaluations.length} answers.`,
-            aiDetection: {
-              questionCountAnalyzed: aiDetections.length,
-              aiGeneratedCount,
-              averageConfidence: averageAIConfidence
-            },
             typedAiDetection: {
               typedAnswersAnalyzed: typedAiDetections.length,
-              typedAiGeneratedCount,
+              typedAiHighRiskCount: typedHighRiskCount,
+              typedAiMediumRiskCount: typedMediumRiskCount,
               typedAverageConfidence: typedAverageAIConfidence,
               averageVoiceTypedMatch,
             },

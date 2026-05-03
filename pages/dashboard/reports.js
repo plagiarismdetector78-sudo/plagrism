@@ -348,8 +348,11 @@ const ReportsPage = () => {
                                 <div className="text-sm text-white font-medium flex-1">
                                   Q{idx + 1}. {item.questionText || 'Question'}
                                 </div>
-                                <div className={`text-sm font-bold ${getScoreColor(item.score || 0)}`}>
-                                  {item.score || 0}%
+                                <div className="text-right">
+                                  <div className={`text-sm font-bold ${getScoreColor(item.score || 0)}`}>
+                                    {item.score || 0}%
+                                  </div>
+                                  <div className="text-[10px] text-gray-500 leading-tight">spoken vs expected</div>
                                 </div>
                               </div>
                               <div className="text-xs text-gray-400 mt-2 whitespace-pre-wrap">
@@ -389,12 +392,17 @@ const ReportsPage = () => {
                               )}
                               {item.typedAiDetection?.confidence != null && (
                                 <div className="text-xs text-yellow-300 mt-2">
-                                  Typed AI detection: {item.typedAiDetection.label || 'Unknown'} ({item.typedAiDetection.confidence || 0}%)
+                                  Typed AI risk: {item.typedAiDetection.label || 'Unknown'} ({item.typedAiDetection.confidence || 0}%)
                                 </div>
                               )}
-                              {Array.isArray(item.typedAiDetection?.allScores) && item.typedAiDetection.allScores.length > 0 && (
+                              {item.typedAiDetection?.pasteSuspected != null && (
                                 <div className="text-[11px] text-gray-400 mt-1">
-                                  Scores: {item.typedAiDetection.allScores.map((s) => `${s.label}: ${Math.round((s.score || 0) * 100)}%`).join(' | ')}
+                                  Paste suspected: {item.typedAiDetection.pasteSuspected ? 'Yes' : 'No'}
+                                </div>
+                              )}
+                              {Array.isArray(item.typedAiDetection?.reasons) && item.typedAiDetection.reasons.length > 0 && (
+                                <div className="text-[11px] text-gray-400 mt-1 whitespace-pre-wrap">
+                                  Reasons: {item.typedAiDetection.reasons.join(' | ')}
                                 </div>
                               )}
                               {item.interpretation && (

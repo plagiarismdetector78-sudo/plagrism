@@ -6,12 +6,9 @@ import Sidebar from "../../components/Sidebar";
 import Navbar from "../../components/Navbar";
 
 function InterviewerDashboard() {
-  const POSITION_OPTIONS = [
-    "Computer Science",
-    "Software Engineering",
-    "Cyber Security",
-  ];
+  const DEFAULT_FIELDS = ["Computer Science", "Software Engineering", "Cyber Security"];
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [fieldOptions, setFieldOptions] = useState(DEFAULT_FIELDS);
   const [candidates, setCandidates] = useState([]);
   const [loadingCandidates, setLoadingCandidates] = useState(false);
   const [showCandidatesModal, setShowCandidatesModal] = useState(false);
@@ -63,6 +60,19 @@ const [scheduleInterviewType, setScheduleInterviewType] = useState("technical");
     const savedState = localStorage.getItem("sidebarCollapsed");
     if (savedState === "true") setSidebarCollapsed(true);
     fetchScheduledInterviews();
+    (async () => {
+      try {
+        const res = await fetch("/api/question-categories");
+        const data = await res.json();
+        if (data.success && Array.isArray(data.categories) && data.categories.length > 0) {
+          setFieldOptions(data.categories);
+          setSchedulePosition((prev) => (data.categories.includes(prev) ? prev : data.categories[0]));
+          setEditPosition((prev) => (data.categories.includes(prev) ? prev : data.categories[0]));
+        }
+      } catch {
+        // ignore
+      }
+    })();
     // 🔥 Handle Schedule Interview
 
 
@@ -951,7 +961,7 @@ const updateInterview = async () => {
         onChange={(e) => setEditPosition(e.target.value)}
         className="w-full mt-2 mb-3 p-3 rounded-xl bg-white/10 text-white border border-white/20 focus:ring-2 focus:ring-blue-500"
       >
-        {POSITION_OPTIONS.map((option) => (
+        {fieldOptions.map((option) => (
           <option key={option} value={option} className="bg-gray-900">
             {option}
           </option>
