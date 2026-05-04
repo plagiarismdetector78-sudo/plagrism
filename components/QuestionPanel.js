@@ -194,9 +194,11 @@ export default function QuestionPanel({
                                                 onBeforeInput={(e) => {
                                                     const inputType = e?.nativeEvent?.inputType || '';
                                                     if (!onTypedInputEvent) return;
-                                                    if (inputType === 'insertFromPaste' || inputType === 'insertFromDrop') {
+                                                    // IMPORTANT: don't count paste here because onPaste also fires (would double count).
+                                                    // Keep this handler for keystrokes and other insertions.
+                                                    if (inputType === 'insertFromDrop') {
                                                         onTypedInputEvent({ type: 'paste' });
-                                                    } else if (String(inputType).startsWith('insert')) {
+                                                    } else if (String(inputType).startsWith('insert') && inputType !== 'insertFromPaste') {
                                                         onTypedInputEvent({ type: 'keystroke' });
                                                     }
                                                 }}
