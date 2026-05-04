@@ -88,12 +88,11 @@ export default function MeetingPage() {
   const [isVideoHidden, setIsVideoHidden] = useState(false);
   const [scheduledInterview, setScheduledInterview] = useState(null);
   const [candidateInfo, setCandidateInfo] = useState(null);
-  const lockedCategory =
-    scheduledInterview?.position &&
-    scheduledInterview.position !== 'Not Provided' &&
-    domainCategories.includes(scheduledInterview.position)
-      ? scheduledInterview.position
-      : null;
+  const lockedCategory = (() => {
+    const pos = String(scheduledInterview?.position || "").trim();
+    if (!pos || pos === "Not Provided") return null;
+    return pos;
+  })();
   /** Longer chunks reduce mid-word cuts; question switches flush early via recorder.stop(). */
   const RECORDING_CHUNK_MS = 12000;
 
@@ -248,7 +247,12 @@ export default function MeetingPage() {
           Array.isArray(d.categories) &&
           d.categories.length > 0
         ) {
-          setDomainCategories(d.categories);
+          // Ensure the scheduled interview category is present in the list so the UI and locking logic stay consistent.
+          const scheduledPos = String(scheduledInterview?.position || "").trim();
+          const merged = scheduledPos && scheduledPos !== "Not Provided" && !d.categories.includes(scheduledPos)
+            ? [...d.categories, scheduledPos]
+            : d.categories;
+          setDomainCategories(merged);
         }
       } catch {
         /* keep defaults */
@@ -257,13 +261,12 @@ export default function MeetingPage() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [scheduledInterview?.position]);
 
   useEffect(() => {
-    if (
-      domainCategories.length > 0 &&
-      !domainCategories.includes(questionCategory)
-    ) {
+    // Do not override the scheduled interview category.
+    // Only pick a default when category is empty.
+    if (!String(questionCategory || "").trim() && domainCategories.length > 0) {
       setQuestionCategory(domainCategories[0]);
     }
   }, [domainCategories, questionCategory]);
@@ -483,13 +486,15 @@ useEffect(() => {
       
       if (data.success) {
         setScheduledInterview(data.interview);
-        const allowedCategories = new Set([
-          "Computer Science",
-          "Software Engineering",
-          "Cyber Security",
-        ]);
-        if (allowedCategories.has(data.interview?.position)) {
-          setQuestionCategory(data.interview.position);
+        const pos = String(data.interview?.position || "").trim();
+        if (pos && pos !== "Not Provided") {
+          // Always honor the category selected at scheduling time.
+          setQuestionCategory(pos);
+          // Ensure dropdown can show it even before /api/question-categories loads.
+          setDomainCategories((prev) => {
+            const cur = Array.isArray(prev) ? prev : [];
+            return cur.includes(pos) ? cur : [...cur, pos];
+          });
         }
         const candidateData = {
           id: data.interview.candidate_id,
