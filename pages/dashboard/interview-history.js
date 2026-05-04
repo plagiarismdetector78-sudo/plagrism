@@ -770,33 +770,33 @@ const InterviewHistoryPage = () => {
                   </p>
                 </div>
 
-                {/* Detailed Scores */}
+                {/* Metrics (real values from question-wise results) */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="bg-white/5 rounded-xl p-4 border border-white/10">
-                    <h5 className="text-sm font-medium text-gray-400 mb-2">Technical Accuracy</h5>
+                    <h5 className="text-sm font-medium text-gray-400 mb-2">Alignment average</h5>
                     <div className="text-2xl font-bold text-white">
-                      {reportData.evaluation_data?.accuracy || reportData.evaluation_data?.technicalScore || 0}%
+                      {reportData.evaluation_data?.summaryMetrics?.alignmentAverage ?? reportData.evaluation_data?.overallScore ?? 0}%
                     </div>
                   </div>
-                  
+
                   <div className="bg-white/5 rounded-xl p-4 border border-white/10">
-                    <h5 className="text-sm font-medium text-gray-400 mb-2">Communication</h5>
+                    <h5 className="text-sm font-medium text-gray-400 mb-2">Voice ↔ Typed average</h5>
                     <div className="text-2xl font-bold text-white">
-                      {reportData.evaluation_data?.clarity || reportData.evaluation_data?.communicationScore || 0}%
+                      {reportData.evaluation_data?.summaryMetrics?.voiceTypedAverage ?? reportData.evaluation_data?.typedAiDetection?.averageVoiceTypedMatch ?? 0}%
                     </div>
                   </div>
-                  
+
                   <div className="bg-white/5 rounded-xl p-4 border border-white/10">
-                    <h5 className="text-sm font-medium text-gray-400 mb-2">Problem Solving</h5>
+                    <h5 className="text-sm font-medium text-gray-400 mb-2">Typed AI average confidence</h5>
                     <div className="text-2xl font-bold text-white">
-                      {reportData.evaluation_data?.understanding || reportData.evaluation_data?.problemSolvingScore || 0}%
+                      {reportData.evaluation_data?.summaryMetrics?.typedAiAverageConfidence ?? reportData.evaluation_data?.typedAiDetection?.typedAverageConfidence ?? 0}%
                     </div>
                   </div>
-                  
+
                   <div className="bg-white/5 rounded-xl p-4 border border-white/10">
-                    <h5 className="text-sm font-medium text-gray-400 mb-2">Code Quality</h5>
+                    <h5 className="text-sm font-medium text-gray-400 mb-2">Paste flagged (count)</h5>
                     <div className="text-2xl font-bold text-white">
-                      {reportData.evaluation_data?.completeness || reportData.evaluation_data?.codeQualityScore || 0}%
+                      {reportData.evaluation_data?.summaryMetrics?.pasteSuspectedCount ?? 0}
                     </div>
                   </div>
                 </div>

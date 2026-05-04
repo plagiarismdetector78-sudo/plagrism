@@ -2376,6 +2376,12 @@ useEffect(() => {
       const averageVoiceTypedMatch = voiceTypedMatches.length
         ? Math.round(voiceTypedMatches.reduce((a, b) => a + b, 0) / voiceTypedMatches.length)
         : 0;
+
+      const pasteSuspectedCount = questionEvaluationsWithTyped.filter((q) => {
+        const m = q.typedMeta || null;
+        if (!m) return false;
+        return (Number(m.pasteCount || 0) > 0) || (Number(m.pastedChars || 0) > 20);
+      }).length;
       // Spoken-answer AI detection is now Groq-driven; we do not compute a separate HF aiDetection aggregate.
 
       const overallInterpretation =
@@ -2391,18 +2397,20 @@ useEffect(() => {
       setPlagiarismDetails({
         interpretation: overallInterpretation,
         details: {
-          scores: {
-            accuracy: averageMetric("accuracy"),
-            completeness: averageMetric("completeness"),
-            understanding: averageMetric("understanding"),
-            clarity: averageMetric("clarity")
-          },
           typedAnswerMetrics: {
             averageVoiceTypedMatch,
             typedAnswersAnalyzed: typedAiDetections.length,
             typedAiHighRiskCount: typedHighRiskCount,
             typedAiMediumRiskCount: typedMediumRiskCount,
             typedAverageAIConfidence,
+          },
+          summaryMetrics: {
+            alignmentAverage: overallScore,
+            voiceTypedAverage: averageVoiceTypedMatch,
+            typedAiHighRiskCount: typedHighRiskCount,
+            typedAiMediumRiskCount: typedMediumRiskCount,
+            typedAiAverageConfidence: typedAverageAIConfidence,
+            pasteSuspectedCount,
           },
           feedback: `Question-wise evaluation complete for ${questionEvaluations.length} answers.`,
           strengths: [],
@@ -2485,15 +2493,19 @@ useEffect(() => {
           transcribedAnswer: fullTranscript.trim(),
           evaluation: {
             overallScore,
-            accuracy: averageMetric("accuracy"),
-            completeness: averageMetric("completeness"),
-            understanding: averageMetric("understanding"),
-            clarity: averageMetric("clarity"),
             interpretation: overallInterpretation,
             strengths: [],
             weaknesses: [],
             matchedConcepts: [],
             feedback: `Generated from question-wise similarity analysis of ${normalizedQuestionEvaluations.length} answers.`,
+            summaryMetrics: {
+              alignmentAverage: overallScore,
+              voiceTypedAverage: averageVoiceTypedMatch,
+              typedAiHighRiskCount: typedHighRiskCount,
+              typedAiMediumRiskCount: typedMediumRiskCount,
+              typedAiAverageConfidence: typedAverageAIConfidence,
+              pasteSuspectedCount,
+            },
             typedAiDetection: {
               typedAnswersAnalyzed: typedAiDetections.length,
               typedAiHighRiskCount: typedHighRiskCount,

@@ -317,17 +317,28 @@ const ReportsPage = () => {
                       </div>
                     </div>
 
-                    {/* Metrics */}
-                    <div className="grid grid-cols-4 gap-4">
-                      {['accuracy', 'completeness', 'understanding', 'clarity'].map((metric) => (
-                        <div key={metric} className="bg-white/5 rounded-xl p-4 border border-white/10 text-center">
-                          <div className="text-2xl font-bold text-purple-400">
-                            {selectedReport.evaluation_data?.[metric] || 0}%
-                          </div>
-                          <div className="text-xs text-gray-400 capitalize mt-1">{metric}</div>
+                    {/* Metrics (real values from question-wise results) */}
+                    {(() => {
+                      const m = selectedReport.evaluation_data?.summaryMetrics || {};
+                      const cards = [
+                        { label: 'Alignment avg', value: m.alignmentAverage ?? selectedReport.evaluation_data?.overallScore ?? 0, suffix: '%', color: 'text-purple-400' },
+                        { label: 'Voice↔Typed avg', value: m.voiceTypedAverage ?? selectedReport.evaluation_data?.typedAiDetection?.averageVoiceTypedMatch ?? 0, suffix: '%', color: 'text-emerald-400' },
+                        { label: 'Paste flagged', value: m.pasteSuspectedCount ?? 0, suffix: '', color: 'text-amber-300' },
+                        { label: 'Typed AI avg conf', value: m.typedAiAverageConfidence ?? selectedReport.evaluation_data?.typedAiDetection?.typedAverageConfidence ?? 0, suffix: '%', color: 'text-yellow-300' },
+                      ];
+                      return (
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                          {cards.map((c) => (
+                            <div key={c.label} className="bg-white/5 rounded-xl p-4 border border-white/10 text-center">
+                              <div className={`text-2xl font-bold ${c.color}`}>
+                                {Number.isFinite(Number(c.value)) ? Number(c.value) : 0}{c.suffix}
+                              </div>
+                              <div className="text-xs text-gray-400 mt-1">{c.label}</div>
+                            </div>
+                          ))}
                         </div>
-                      ))}
-                    </div>
+                      );
+                    })()}
 
                     {/* Feedback */}
                     {selectedReport.evaluation_data?.feedback && (
