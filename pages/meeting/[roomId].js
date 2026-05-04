@@ -56,6 +56,7 @@ export default function MeetingPage() {
   const [questionTypedMetaMap, setQuestionTypedMetaMap] = useState({}); // { [questionId]: { firstInputAt,lastInputAt,activeMs,keystrokes,pasteCount,pastedChars,changeCount } }
   const typedEmitTimerRef = useRef(null);
   const questionTypedMetaMapRef = useRef({});
+  const lastPasteAtByQuestionRef = useRef({}); // { [questionId]: timestamp }
   /** Mirrors questionTranscriptMap for socket handlers (effect deps omit map → avoid stale {}). */
   const questionTranscriptMapRef = useRef({});
   const [askedQuestions, setAskedQuestions] = useState([]); // Track all displayed questions in this interview
@@ -214,6 +215,7 @@ export default function MeetingPage() {
       if (type === "paste") {
         next.pasteCount = (next.pasteCount || 0) + 1;
         next.pastedChars = (next.pastedChars || 0) + Math.max(0, insertedTextLength);
+        lastPasteAtByQuestionRef.current[key] = now;
       }
 
       // Write-through to ref so the latest value is available immediately.
@@ -2103,7 +2105,9 @@ useEffect(() => {
   const evaluateQuestionWiseAnswers = async (answersByQuestion) => {
     const evaluations = await Promise.all(
       answersByQuestion.map(async (qa) => {
-        if (!qa.answer || !qa.answer.trim()) {
+        const hasSpoken = Boolean(String(qa.answer || "").trim());
+        const hasTyped = Boolean(String(qa.typedAnswer || "").trim());
+        if (!hasSpoken && !hasTyped) {
           return {
             ...qa,
             score: 0,
@@ -2157,6 +2161,9 @@ useEffect(() => {
           }
 
           const groq = data.analysis;
+          // If spoken is missing but typed exists, keep showing typed AI risk + meta,
+          // and let the overall question score come from typed/expected alignment later (future extension).
+          // For now, score is spoken vs expected alignment (0 when spoken is empty).
           const score = groq?.spoken_expected_alignment?.score ?? 0;
 
           return {
@@ -2900,7 +2907,10 @@ useEffect(() => {
               nextLen: nextValue.length,
               delta,
             });
-            if (delta >= 5) {
+            const lastPasteAt = lastPasteAtByQuestionRef.current[String(qid)] || 0;
+            const recentlyPasted = Date.now() - lastPasteAt <= 400;
+            if (delta >= 5 && !recentlyPasted) {
+              // Heuristic paste detection (fallback) — avoid double counting when onPaste already fired.
               recordTypingEvent(qid, { type: "paste", insertedTextLength: delta });
             } else {
               recordTypingEvent(qid, { type: "keystroke" });
