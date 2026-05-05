@@ -17,8 +17,10 @@ export default async function handler(req, res) {
     // Use Hugging Face Inference API for sign language detection
     const HF_API_KEY = process.env.HUGGINGFACE_API_KEY;
     
-    // Try an alternative ASL detection model
-    const MODEL_URL = 'https://api-inference.huggingface.co/models/akhaliq/GSLR-Sign-Language-Recognition';
+    // English/ASL alphabet model (A–Z).
+    // NOTE: The previous GSLR model can be Gujarati-focused depending on training data.
+    // This one is explicitly ASL alphabet detection.
+    const MODEL_URL = 'https://api-inference.huggingface.co/models/prithivMLmods/Alphabet-Sign-Language-Detection';
 
     // Convert base64 to buffer if needed
     let imageBuffer;
@@ -57,19 +59,29 @@ export default async function handler(req, res) {
 
       const predictions = await response.json();
 
-      // Process predictions
+      // Process predictions (HF usually returns [{label, score}, ...])
       if (Array.isArray(predictions) && predictions.length > 0) {
         // Get the highest confidence prediction
         const bestPrediction = predictions.reduce((prev, current) => 
           (current.score > prev.score) ? current : prev
         );
 
-        // Extract the letter from the label
+        // Extract the letter from the label (supports various label styles)
         let letter = bestPrediction.label;
         if (letter.includes(':')) {
           letter = letter.split(':')[1]?.trim();
         }
-        letter = letter?.replace('letter_', '').toUpperCase() || 'A';
+        letter = letter
+          ?.replace(/^letter[_\s-]*/i, '')
+          ?.replace(/^class[_\s-]*/i, '')
+          ?.trim()
+          ?.toUpperCase();
+        // Keep only A-Z or special tokens
+        if (!letter || !/^[A-Z]$/.test(letter)) {
+          // Some models may output "A " or "A\n"
+          const m = String(letter || '').match(/[A-Z]/);
+          letter = m?.[0] || 'A';
+        }
 
         return res.status(200).json({
           success: true,
