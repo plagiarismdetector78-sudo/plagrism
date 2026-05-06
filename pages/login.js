@@ -20,9 +20,12 @@ export default function Login() {
         const userId = localStorage.getItem('userId');
         const role = localStorage.getItem('role');
         if (userId && role) {
-          const redirectPath = role === 'interviewer' 
-            ? '/dashboard/interviewer' 
-            : '/dashboard/candidate';
+          const redirectPath =
+            role === 'admin'
+              ? '/admin'
+              : role === 'interviewer'
+                ? '/dashboard/interviewer'
+                : '/dashboard/candidate';
           router.push(redirectPath);
         }
       } catch (error) {
@@ -93,12 +96,21 @@ export default function Login() {
         }
 
         // Redirect based on role
-        const redirectPath = data.role === 'interviewer' 
-          ? '/dashboard/interviewer' 
-          : '/dashboard/candidate';
+        const redirectPath =
+          data.role === 'admin'
+            ? '/admin'
+            : data.role === 'interviewer'
+              ? '/dashboard/interviewer'
+              : '/dashboard/candidate';
         
         router.push(redirectPath);
       } else {
+        if (data?.error === 'PENDING_APPROVAL') {
+          setErrors({
+            general: data.message || 'Your interviewer account is pending admin approval.',
+          });
+          return;
+        }
         setErrors({ 
           general: data.message || 'Invalid email or password. Please try again.' 
         });

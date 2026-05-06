@@ -58,7 +58,38 @@ const Sidebar = ({ sidebarCollapsed, toggleSidebar, handleLogout }) => {
   }
 
   const sidebarItems =
-    role === "interviewer"
+    role === "admin"
+      ? [
+          {
+            id: 1,
+            name: "Admin Dashboard",
+            path: "/admin",
+            icon: <FaHome className="text-lg" />,
+            description: "System overview",
+          },
+          {
+            id: 2,
+            name: "Question Pool",
+            path: "/admin/question-bank",
+            icon: <FaBook className="text-lg" />,
+            description: "Questions & categories",
+          },
+          {
+            id: 3,
+            name: "Interviewer Approvals",
+            path: "/admin/interviewers",
+            icon: <FaUserTie className="text-lg" />,
+            description: "Approve pending accounts",
+          },
+          {
+            id: 4,
+            name: "Users",
+            path: "/admin/users",
+            icon: <FaUser className="text-lg" />,
+            description: "User management",
+          },
+        ]
+      : role === "interviewer"
       ? [
           {
             id: 1,
@@ -76,27 +107,20 @@ const Sidebar = ({ sidebarCollapsed, toggleSidebar, handleLogout }) => {
           // },
           {
             id: 4,
-            name: "Question Bank",
-            path: "/dashboard/plagiarism-detection",
-            icon: <FaBook className="text-lg" />,
-            description: "Questions & categories",
-          },
-          {
-            id: 5,
             name: "Interview History",
             path: "/dashboard/interview-history",
             icon: <FaHistory className="text-lg" />,
             description: "Past interviews",
           },
           {
-            id: 6,
+            id: 5,
             name: "Reports",
             path: "/dashboard/reports",
             icon: <FaChartLine className="text-lg" />,
             description: "Detailed analytics",
           },
           {
-            id: 7,
+            id: 6,
             name: "Profile",
             path: "/dashboard/profile",
             icon: <FaUserCircle className="text-lg" />,

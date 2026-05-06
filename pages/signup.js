@@ -303,35 +303,6 @@ export default function Signup() {
                     )}
                   </div>
 
-                  {/* Role Selection */}
-                  <div>
-                    <label htmlFor="role" className="block text-sm font-medium text-gray-300 mb-2">
-                      I am a...
-                    </label>
-                    <select
-                      id="role"
-                      name="role"
-                      value={formData.role}
-                      onChange={handleChange}
-                      className={`w-full px-4 py-3 bg-white/10 border rounded-xl text-white focus:ring-2 focus:ring-green-500 focus:border-transparent backdrop-blur-sm transition-all duration-200 ${
-                        errors.role ? 'border-red-400' : 'border-white/20'
-                      }`}
-                      disabled={isLoading}
-                    >
-                      <option value="" className="text-gray-800">Select your role</option>
-                      <option value="candidate" className="text-gray-800">Candidate (Looking for opportunities)</option>
-                      <option value="interviewer" className="text-gray-800">Interviewer (Hiring talent)</option>
-                    </select>
-                    {errors.role && (
-                      <p className="mt-2 text-sm text-red-400 flex items-center">
-                        <svg className="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
-                          <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
-                        </svg>
-                        {errors.role}
-                      </p>
-                    )}
-                  </div>
-
                   {/* Terms Agreement */}
                   <div className="flex items-center">
                     <input
@@ -350,6 +321,40 @@ export default function Signup() {
                         Privacy Policy
                       </Link>
                     </label>
+                  </div>
+
+                  {/* Role Selection */}
+                  <div>
+                    <label htmlFor="role" className="block text-sm font-medium text-gray-300 mb-2">
+                      Account Type
+                    </label>
+                    <select
+                      id="role"
+                      name="role"
+                      value={formData.role}
+                      onChange={handleChange}
+                      className={`w-full px-4 py-3 bg-white/10 border rounded-xl text-white focus:ring-2 focus:ring-green-500 focus:border-transparent backdrop-blur-sm transition-all duration-200 ${
+                        errors.role ? 'border-red-400' : 'border-white/20'
+                      }`}
+                      disabled={isLoading}
+                    >
+                      <option value="" className="bg-gray-900">Select role</option>
+                      <option value="candidate" className="bg-gray-900">Candidate</option>
+                      <option value="interviewer" className="bg-gray-900">Interviewer (requires admin approval)</option>
+                    </select>
+                    {errors.role && (
+                      <p className="mt-2 text-sm text-red-400 flex items-center">
+                        <svg className="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                          <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+                        </svg>
+                        {errors.role}
+                      </p>
+                    )}
+                    {String(formData.role || '') === 'interviewer' && (
+                      <p className="mt-2 text-xs text-gray-400">
+                        Interviewer accounts stay <span className="text-yellow-300 font-semibold">Pending</span> until an admin approves them.
+                      </p>
+                    )}
                   </div>
 
                   {/* Error Message */}

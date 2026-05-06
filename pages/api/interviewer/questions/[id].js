@@ -1,6 +1,6 @@
 import { query, withTransaction } from '../../../../lib/db';
 import { ensureQuestionBankSchema } from '../../../../lib/ensureQuestionBankSchema';
-import { assertInterviewer } from '../../../../lib/assertInterviewer';
+import { assertAdmin } from '../../../../lib/assertAdmin';
 
 export default async function handler(req, res) {
     const id = parseInt(req.query.id, 10);
@@ -11,7 +11,7 @@ export default async function handler(req, res) {
     try {
         await ensureQuestionBankSchema();
         const userId = req.body?.userId ?? req.query.userId;
-        await assertInterviewer(userId);
+        await assertAdmin(userId);
 
         if (req.method === 'PUT') {
             const questionText = String(req.body?.questionText || '').trim();

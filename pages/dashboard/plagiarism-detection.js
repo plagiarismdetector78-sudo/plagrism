@@ -630,4 +630,4 @@ function QuestionBankPage() {
   );
 }
 
-export default withAuth(QuestionBankPage, 'interviewer');
+export default withAuth(QuestionBankPage, 'admin');

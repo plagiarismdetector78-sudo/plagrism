@@ -1,5 +1,6 @@
 // pages/api/get-questions.js
 import { query } from '../../lib/db';
+import { ensureQuestionBankSchema } from '../../lib/ensureQuestionBankSchema';
 
 export default async function handler(req, res) {
     if (req.method !== 'GET') {
@@ -9,21 +10,31 @@ export default async function handler(req, res) {
     try {
         const { category, difficulty, limit = '10', random = 'false' } = req.query;
 
-        let sql = 'SELECT Id, QuestionText, Category, DifficultyLevel FROM Questions WHERE 1=1';
+        await ensureQuestionBankSchema();
+
+        let sql = `
+          SELECT
+            q.id,
+            q.questiontext,
+            q.category,
+            q.difficultylevel
+          FROM questions q
+          WHERE 1=1
+        `;
         const params = [];
         let paramCount = 1;
 
         // Add category filter
         if (category) {
-            sql += ` AND Category = $${paramCount}`;
-            params.push(category);
+            sql += ` AND TRIM(q.category) = $${paramCount}`;
+            params.push(String(category).trim());
             paramCount++;
         }
 
         // Add difficulty filter
         if (difficulty) {
-            sql += ` AND DifficultyLevel = $${paramCount}`;
-            params.push(difficulty);
+            sql += ` AND q.difficultylevel = $${paramCount}`;
+            params.push(String(difficulty));
             paramCount++;
         }
 
@@ -31,7 +42,7 @@ export default async function handler(req, res) {
         if (random === 'true') {
             sql += ' ORDER BY RANDOM()';
         } else {
-            sql += ' ORDER BY Id';
+            sql += ' ORDER BY q.id';
         }
 
         // Add limit

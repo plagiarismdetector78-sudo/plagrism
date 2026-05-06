@@ -1,12 +1,12 @@
 import { query, withTransaction } from '../../../lib/db';
 import { ensureQuestionBankSchema } from '../../../lib/ensureQuestionBankSchema';
-import { assertInterviewer } from '../../../lib/assertInterviewer';
+import { assertAdmin } from '../../../lib/assertAdmin';
 
 export default async function handler(req, res) {
     try {
         await ensureQuestionBankSchema();
         const userId = req.method === 'GET' ? req.query.userId : req.body?.userId ?? req.query.userId;
-        await assertInterviewer(userId);
+        await assertAdmin(userId);
 
         if (req.method === 'GET') {
             const result = await query(
