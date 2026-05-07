@@ -11,6 +11,8 @@ function AdminUsers() {
   const [users, setUsers] = useState([]);
   const [queryText, setQueryText] = useState("");
   const [roleFilter, setRoleFilter] = useState("");
+  const [actionLoading, setActionLoading] = useState(null); // targetUserId being acted on
+  const [toast, setToast] = useState(null); // { message, type: 'success' | 'error' }
   const [createAdminOpen, setCreateAdminOpen] = useState(false);
   const [createAdminLoading, setCreateAdminLoading] = useState(false);
   const [createAdminErr, setCreateAdminErr] = useState("");
@@ -30,6 +32,9 @@ function AdminUsers() {
       const res = await fetch(`/api/admin/users?${qs}`);
       const data = await res.json();
       if (data.success) setUsers(data.users || []);
+      else showToast(data.message || "Failed to load users", "error");
+    } catch {
+      showToast("Network error loading users", "error");
     } finally {
       setLoading(false);
     }
@@ -51,6 +56,47 @@ function AdminUsers() {
   const handleLogout = () => {
     localStorage.clear();
     window.location.href = "/login";
+  };
+
+  const showToast = (message, type = "success") => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 3500);
+  };
+
+  const setRole = async (targetUserId, role, confirmMsg) => {
+    if (confirmMsg && !window.confirm(confirmMsg)) return;
+    const userId = localStorage.getItem("userId");
+    if (!userId) return;
+    setActionLoading(targetUserId);
+    try {
+      const res = await fetch("/api/admin/set-user-role", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId, targetUserId, role }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        const label =
+          role === "admin" ? "User promoted to admin" :
+          role === "interviewer" ? "User set as interviewer (pending approval)" :
+          "Admin role removed — user is now a candidate";
+        showToast(label, "success");
+        // Update the row in-place without a full re-fetch
+        setUsers((prev) =>
+          prev.map((u) =>
+            u.id === targetUserId
+              ? { ...u, role, is_approved: role !== "interviewer" }
+              : u
+          )
+        );
+      } else {
+        showToast(data.message || "Action failed", "error");
+      }
+    } catch {
+      showToast("Network error, please try again", "error");
+    } finally {
+      setActionLoading(null);
+    }
   };
 
   const submitCreateAdmin = async () => {
@@ -82,22 +128,13 @@ function AdminUsers() {
       }
       setCreateAdminOpen(false);
       setCreateAdminForm({ name: "", email: "", password: "", confirmPassword: "" });
+      showToast("Admin account created", "success");
       fetchUsers();
-    } catch (e) {
+    } catch {
       setCreateAdminErr("Network error. Please try again.");
     } finally {
       setCreateAdminLoading(false);
     }
-  };
-
-  const setRole = async (targetUserId, role) => {
-    const userId = localStorage.getItem("userId");
-    await fetch("/api/admin/set-user-role", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ userId, targetUserId, role }),
-    });
-    fetchUsers();
   };
 
   const rows = useMemo(() => users, [users]);
@@ -107,6 +144,17 @@ function AdminUsers() {
       <Head>
         <title>Admin - Users</title>
       </Head>
+
+      {/* Toast notification */}
+      {toast && (
+        <div
+          className={`fixed top-5 right-5 z-50 px-5 py-3 rounded-xl shadow-lg text-white text-sm font-medium transition-all ${
+            toast.type === "success" ? "bg-green-600" : "bg-red-600"
+          }`}
+        >
+          {toast.message}
+        </div>
+      )}
 
       <div className="min-h-screen bg-gradient-to-br from-gray-900 via-purple-900 to-black">
         <Navbar />
@@ -182,32 +230,48 @@ function AdminUsers() {
                         <tr key={u.id} className="border-b border-white/5 text-sm">
                           <td className="px-3 py-2">{u.full_name || "-"}</td>
                           <td className="px-3 py-2">{u.email}</td>
-                          <td className="px-3 py-2">{u.role}</td>
-                          <td className="px-3 py-2">{u.role === "interviewer" ? (u.is_approved ? "Yes" : "Pending") : "—"}</td>
-                          <td className="px-3 py-2">{u.created_at ? new Date(u.created_at).toLocaleString() : "—"}</td>
+                          <td className="px-3 py-2 capitalize">{u.role}</td>
+                          <td className="px-3 py-2">
+                            {u.role === "interviewer" ? (u.is_approved ? "Yes" : "Pending") : "—"}
+                          </td>
+                          <td className="px-3 py-2">
+                            {u.created_at ? new Date(u.created_at).toLocaleString() : "—"}
+                          </td>
                           <td className="px-3 py-2">
                             <div className="flex flex-wrap gap-2">
+                              {/* Make admin / Remove admin */}
                               {u.role !== "admin" ? (
                                 <button
                                   onClick={() => setRole(u.id, "admin")}
-                                  className="px-3 py-1 rounded-lg bg-purple-600/80 hover:bg-purple-600 text-white text-xs"
+                                  disabled={actionLoading === u.id}
+                                  className="px-3 py-1 rounded-lg bg-purple-600/80 hover:bg-purple-600 text-white text-xs disabled:opacity-50 disabled:cursor-not-allowed"
                                 >
-                                  Make admin
+                                  {actionLoading === u.id ? "…" : "Make admin"}
                                 </button>
                               ) : (
                                 <button
-                                  onClick={() => setRole(u.id, "candidate")}
-                                  className="px-3 py-1 rounded-lg bg-white/10 hover:bg-white/20 border border-white/10 text-white text-xs"
+                                  onClick={() =>
+                                    setRole(
+                                      u.id,
+                                      "candidate",
+                                      `Remove admin role from ${u.full_name || u.email}? They will become a candidate.`
+                                    )
+                                  }
+                                  disabled={actionLoading === u.id}
+                                  className="px-3 py-1 rounded-lg bg-red-600/70 hover:bg-red-600 border border-red-500/30 text-white text-xs disabled:opacity-50 disabled:cursor-not-allowed"
                                 >
-                                  Remove admin
+                                  {actionLoading === u.id ? "…" : "Remove admin"}
                                 </button>
                               )}
+
+                              {/* Make interviewer (only for non-interviewers) */}
                               {u.role !== "interviewer" && (
                                 <button
                                   onClick={() => setRole(u.id, "interviewer")}
-                                  className="px-3 py-1 rounded-lg bg-yellow-600/70 hover:bg-yellow-600 text-white text-xs"
+                                  disabled={actionLoading === u.id}
+                                  className="px-3 py-1 rounded-lg bg-yellow-600/70 hover:bg-yellow-600 text-white text-xs disabled:opacity-50 disabled:cursor-not-allowed"
                                 >
-                                  Make interviewer (pending)
+                                  {actionLoading === u.id ? "…" : "Make interviewer"}
                                 </button>
                               )}
                             </div>
@@ -291,4 +355,3 @@ function AdminUsers() {
 }
 
 export default withAuth(AdminUsers, "admin");
-

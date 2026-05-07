@@ -13,6 +13,9 @@ const ReportsPage = () => {
   const [loading, setLoading] = useState(true);
   const [selectedReport, setSelectedReport] = useState(null);
   const [showModal, setShowModal] = useState(false);
+  const [integrityResult, setIntegrityResult] = useState(null);
+  const [integrityLoading, setIntegrityLoading] = useState(null); // reportId being checked
+  const [showIntegrityModal, setShowIntegrityModal] = useState(false);
 
   useEffect(() => {
     const savedState = localStorage.getItem('sidebarCollapsed');
@@ -46,6 +49,25 @@ const ReportsPage = () => {
     } catch (error) {
       console.error('Error fetching report:', error);
       alert('Failed to load report');
+    }
+  };
+
+  const checkIntegrity = async (reportId) => {
+    setIntegrityLoading(reportId);
+    try {
+      const response = await fetch(`/api/verify-report-integrity?reportId=${reportId}`);
+      const data = await response.json();
+      if (data.success) {
+        setIntegrityResult(data);
+        setShowIntegrityModal(true);
+      } else {
+        alert(data.message || 'Integrity check failed');
+      }
+    } catch (error) {
+      console.error('Error checking integrity:', error);
+      alert('Failed to run integrity check');
+    } finally {
+      setIntegrityLoading(null);
     }
   };
 
@@ -246,6 +268,14 @@ const ReportsPage = () => {
                               <i className="fas fa-eye"></i>
                               <span>View</span>
                             </button>
+                               <button 
+                              onClick={() => checkIntegrity(report.id)}
+                              disabled={integrityLoading === report.id}
+                              className="flex items-center justify-center space-x-2 px-4 py-2 bg-red-600 hover:bg-red-500 text-white rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                              <i className={integrityLoading === report.id ? "fas fa-spinner fa-spin" : "fas fa-shield-alt"}></i>
+                              <span>{integrityLoading === report.id ? "Checking…" : "Integrity Check"}</span>
+                            </button>
                             <button
                               onClick={() => downloadPDF(report)}
                               className="flex items-center justify-center space-x-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg transition-all"
@@ -261,6 +291,87 @@ const ReportsPage = () => {
                 </div>
               )}
             </div>
+
+            {/* Integrity Check Modal */}
+            {showIntegrityModal && integrityResult && (
+              <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                <div className="bg-gray-900 rounded-2xl border border-white/20 max-w-lg w-full">
+                  {/* Header */}
+                  <div className={`px-6 py-4 border-b border-white/20 flex items-center justify-between rounded-t-2xl ${integrityResult.intact ? 'bg-gradient-to-r from-green-900 to-emerald-900' : 'bg-gradient-to-r from-red-900 to-rose-900'}`}>
+                    <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                      <i className={`fas ${integrityResult.intact ? 'fa-shield-alt' : 'fa-exclamation-triangle'}`}></i>
+                      Integrity Check Result
+                    </h3>
+                    <button onClick={() => setShowIntegrityModal(false)} className="text-gray-400 hover:text-white">
+                      <i className="fas fa-times text-xl"></i>
+                    </button>
+                  </div>
+
+                  <div className="p-6 space-y-4">
+                    {/* Verdict */}
+                    <div className={`rounded-xl p-4 text-center border ${integrityResult.intact ? 'bg-green-500/10 border-green-500/30' : 'bg-red-500/10 border-red-500/30'}`}>
+                      <div className={`text-xl font-bold ${integrityResult.intact ? 'text-green-400' : 'text-red-400'}`}>
+                        {integrityResult.verdict}
+                      </div>
+                    </div>
+
+                    {/* Timestamps */}
+                    <div className="bg-white/5 rounded-xl p-4 border border-white/10 space-y-1 text-sm">
+                      <div className="flex justify-between">
+                        <span className="text-gray-400">Report ID</span>
+                        <span className="text-white font-mono">#{integrityResult.reportId}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-gray-400">Created at</span>
+                        <span className="text-white">{new Date(integrityResult.timestamp).toLocaleString()}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-gray-400">Last updated</span>
+                        <span className="text-white">{new Date(integrityResult.updatedAt).toLocaleString()}</span>
+                      </div>
+                    </div>
+
+                    {/* Content Hash */}
+                    <div className={`rounded-xl p-4 border text-sm space-y-2 ${integrityResult.contentHash.valid ? 'bg-green-500/5 border-green-500/20' : 'bg-red-500/5 border-red-500/20'}`}>
+                      <div className="flex items-center gap-2 font-semibold text-white">
+                        <i className={`fas ${integrityResult.contentHash.valid ? 'fa-check-circle text-green-400' : 'fa-times-circle text-red-400'}`}></i>
+                        Content Hash (SHA-256)
+                      </div>
+                      <div className="text-gray-400 text-xs font-mono break-all">{integrityResult.contentHash.stored}</div>
+                      <div className={`text-xs ${integrityResult.contentHash.valid ? 'text-green-400' : 'text-red-400'}`}>
+                        {integrityResult.contentHash.reason}
+                      </div>
+                    </div>
+
+                    {/* Blockchain Block */}
+                    <div className={`rounded-xl p-4 border text-sm space-y-2 ${integrityResult.blockchain.valid ? 'bg-green-500/5 border-green-500/20' : 'bg-red-500/5 border-red-500/20'}`}>
+                      <div className="flex items-center gap-2 font-semibold text-white">
+                        <i className={`fas ${integrityResult.blockchain.valid ? 'fa-check-circle text-green-400' : 'fa-times-circle text-red-400'}`}></i>
+                        Blockchain Block #{integrityResult.blockchain.blockIndex ?? 'N/A'}
+                      </div>
+                      {integrityResult.blockchain.blockHash && (
+                        <div className="space-y-1">
+                          <div className="text-gray-500 text-xs">Block hash</div>
+                          <div className="text-gray-400 text-xs font-mono break-all">{integrityResult.blockchain.blockHash}</div>
+                          <div className="text-gray-500 text-xs mt-1">Previous hash</div>
+                          <div className="text-gray-400 text-xs font-mono break-all">{integrityResult.blockchain.previousHash}</div>
+                        </div>
+                      )}
+                      <div className={`text-xs ${integrityResult.blockchain.valid ? 'text-green-400' : 'text-red-400'}`}>
+                        {integrityResult.blockchain.reason}
+                      </div>
+                    </div>
+
+                    <button
+                      onClick={() => setShowIntegrityModal(false)}
+                      className="w-full px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white text-sm"
+                    >
+                      Close
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Report Modal */}
             {showModal && selectedReport && (

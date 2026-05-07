@@ -1,4 +1,5 @@
 import { query } from '../../lib/db';
+import { ensureReportSchemaReady } from '../../lib/ensureReportSchema';
 
 export default async function handler(req, res) {
   if (req.method !== 'GET') {
@@ -8,22 +9,28 @@ export default async function handler(req, res) {
   const { userId } = req.query;
 
   try {
+    await ensureReportSchemaReady();
+
     const result = await query(
-      'SELECT * FROM interview_reports WHERE interviewer_id = $1 OR candidate_id = $1 ORDER BY created_at DESC LIMIT 50',
+      `SELECT ir.*,
+              bl.block_index,
+              bl.block_hash,
+              bl.previous_hash,
+              bl.created_at AS block_created_at
+       FROM interview_reports ir
+       LEFT JOIN blockchain_ledger bl ON bl.id = ir.block_id
+       WHERE ir.interviewer_id = $1 OR ir.candidate_id = $1
+       ORDER BY ir.created_at DESC LIMIT 50`,
       [userId]
     );
 
-    // Parse JSON fields for each report
     const reports = result.rows.map(report => {
       try {
-        // Use report_data (JSONB) if available
         if (report.report_data && typeof report.report_data === 'object') {
           report.evaluation_data = report.report_data;
         } else if (report.evaluation_data && typeof report.evaluation_data === 'string') {
           report.evaluation_data = JSON.parse(report.evaluation_data);
         }
-        
-        // Parse questions_asked if it's a string
         if (report.questions_asked && typeof report.questions_asked === 'string') {
           report.questions_asked = JSON.parse(report.questions_asked);
         }

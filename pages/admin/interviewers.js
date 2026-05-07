@@ -8,6 +8,8 @@ function AdminInterviewers() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [loading, setLoading] = useState(true);
   const [pending, setPending] = useState([]);
+  const [actionLoading, setActionLoading] = useState(null); // tracks which interviewerUserId is being acted on
+  const [toast, setToast] = useState(null); // { message, type: 'success' | 'error' }
 
   const fetchPending = async () => {
     const userId = localStorage.getItem("userId");
@@ -17,6 +19,9 @@ function AdminInterviewers() {
       const res = await fetch(`/api/admin/pending-interviewers?userId=${userId}`);
       const data = await res.json();
       if (data.success) setPending(data.interviewers || []);
+      else showToast(data.message || "Failed to load interviewers", "error");
+    } catch {
+      showToast("Network error loading interviewers", "error");
     } finally {
       setLoading(false);
     }
@@ -39,14 +44,34 @@ function AdminInterviewers() {
     window.location.href = "/login";
   };
 
+  const showToast = (message, type = "success") => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 3500);
+  };
+
   const act = async (interviewerUserId, approve) => {
     const userId = localStorage.getItem("userId");
-    await fetch("/api/admin/approve-interviewer", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ userId, interviewerUserId, approve }),
-    });
-    fetchPending();
+    if (!userId) return;
+    setActionLoading(interviewerUserId);
+    try {
+      const res = await fetch("/api/admin/approve-interviewer", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId, interviewerUserId, approve }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        showToast(data.message || (approve ? "Interviewer approved" : "Interviewer rejected"), "success");
+        // Optimistically remove from list immediately
+        setPending((prev) => prev.filter((u) => u.id !== interviewerUserId));
+      } else {
+        showToast(data.message || "Action failed", "error");
+      }
+    } catch {
+      showToast("Network error, please try again", "error");
+    } finally {
+      setActionLoading(null);
+    }
   };
 
   return (
@@ -54,6 +79,17 @@ function AdminInterviewers() {
       <Head>
         <title>Admin - Interviewer Approvals</title>
       </Head>
+
+      {/* Toast notification */}
+      {toast && (
+        <div
+          className={`fixed top-5 right-5 z-50 px-5 py-3 rounded-xl shadow-lg text-white text-sm font-medium transition-all ${
+            toast.type === "success" ? "bg-green-600" : "bg-red-600"
+          }`}
+        >
+          {toast.message}
+        </div>
+      )}
 
       <div className="min-h-screen bg-gradient-to-br from-gray-900 via-purple-900 to-black">
         <Navbar />
@@ -92,15 +128,17 @@ function AdminInterviewers() {
                       <div className="flex gap-2">
                         <button
                           onClick={() => act(u.id, true)}
-                          className="px-4 py-2 rounded-xl bg-green-600/80 hover:bg-green-600 text-white text-sm"
+                          disabled={actionLoading === u.id}
+                          className="px-4 py-2 rounded-xl bg-green-600/80 hover:bg-green-600 text-white text-sm disabled:opacity-50 disabled:cursor-not-allowed"
                         >
-                          Approve
+                          {actionLoading === u.id ? "Processing…" : "Approve"}
                         </button>
                         <button
                           onClick={() => act(u.id, false)}
-                          className="px-4 py-2 rounded-xl bg-red-600/70 hover:bg-red-600 text-white text-sm"
+                          disabled={actionLoading === u.id}
+                          className="px-4 py-2 rounded-xl bg-red-600/70 hover:bg-red-600 text-white text-sm disabled:opacity-50 disabled:cursor-not-allowed"
                         >
-                          Reject
+                          {actionLoading === u.id ? "Processing…" : "Reject"}
                         </button>
                       </div>
                     </div>

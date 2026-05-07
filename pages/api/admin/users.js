@@ -25,12 +25,12 @@ export default async function handler(req, res) {
       WHERE 1=1
     `;
     if (role) {
-      sql += ` AND u.role = $${n++}`;
+      sql += " AND u.role = $" + n++;
       params.push(String(role));
     }
     if (q) {
-      sql += ` AND (LOWER(u.email) LIKE $${n} OR LOWER(COALESCE(p.full_name,'')) LIKE $${n})`;
-      params.push(`%${String(q).toLowerCase()}%`);
+      sql += " AND (LOWER(u.email) LIKE $" + n + " OR LOWER(COALESCE(p.full_name,'')) LIKE $" + n + ")";
+      params.push("%" + String(q).toLowerCase() + "%");
       n++;
     }
     sql += " ORDER BY u.created_at DESC LIMIT 200";
@@ -43,4 +43,3 @@ export default async function handler(req, res) {
     return res.status(status).json({ success: false, message: msg });
   }
 }
-
