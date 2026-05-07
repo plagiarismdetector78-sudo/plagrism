@@ -1,6 +1,6 @@
 // pages/api/verify-report-integrity.js
 import { query } from "../../lib/db";
-import { computeBlockHash } from "../../lib/blockchain";
+import { computeContentHash, computeBlockHash } from "../../lib/blockchain";
 import { ensureReportSchemaReady } from "../../lib/ensureReportSchema";
 
 export default async function handler(req, res) {
@@ -19,9 +19,14 @@ export default async function handler(req, res) {
     const result = await query(
       `SELECT
          ir.id, ir.created_at, ir.updated_at, ir.block_id,
+         ir.interview_id, ir.interviewer_id, ir.candidate_id,
+         ir.interviewer_name, ir.candidate_name,
+         ir.interviewer_email, ir.candidate_email,
+         ir.question_category, ir.room_id, ir.duration, ir.report_type,
          bl.id            AS ledger_id,
          bl.block_index   AS bl_block_index,
          bl.report_id     AS bl_report_id,
+         bl.content_hash  AS bl_content_hash,
          bl.previous_hash AS bl_previous_hash,
          bl.block_hash    AS bl_block_hash,
          bl.created_at    AS bl_created_at
@@ -37,26 +42,55 @@ export default async function handler(req, res) {
 
     const row = result.rows[0];
 
-    // ── Verify block hash ──────────────────────────────────────────────────────
     let blockCheck = { valid: false, reason: "No blockchain block linked to this report" };
+    let tamperDetail = null;
 
     if (row.ledger_id) {
+      // ── 1. Recompute content hash from the CURRENT live report data ───────────
+      // If anyone changed interviewer_name, candidate_name, room_id, etc. in the DB,
+      // this recomputed hash will differ from what was sealed in the block at save time.
+      const liveContentHash = computeContentHash({
+        interview_id:      row.interview_id,
+        interviewer_id:    row.interviewer_id,
+        candidate_id:      row.candidate_id,
+        interviewer_name:  row.interviewer_name,
+        candidate_name:    row.candidate_name,
+        interviewer_email: row.interviewer_email,
+        candidate_email:   row.candidate_email,
+        question_category: row.question_category,
+        room_id:           row.room_id,
+        duration:          row.duration,
+        report_type:       row.report_type,
+        created_at:        row.created_at,
+      });
+
+      const contentTampered = liveContentHash !== row.bl_content_hash;
+
+      // ── 2. Recompute block hash from the CURRENT blockchain_ledger row ────────
+      // If anyone changed the block's own fields, this will differ from bl_block_hash.
       const blCreatedAtStr = row.bl_created_at instanceof Date
         ? row.bl_created_at.toISOString()
         : String(row.bl_created_at);
 
-      const recomputed = computeBlockHash({
+      const recomputedBlockHash = computeBlockHash({
         block_index:   row.bl_block_index,
         report_id:     row.bl_report_id,
+        content_hash:  row.bl_content_hash,  // use what's in the block
         previous_hash: row.bl_previous_hash,
         created_at:    blCreatedAtStr,
       });
 
-      const valid = recomputed === row.bl_block_hash;
-      blockCheck = {
-        valid,
-        reason: valid ? "Block hash verified" : "Block hash mismatch — blockchain entry has been tampered with",
-      };
+      const blockTampered = recomputedBlockHash !== row.bl_block_hash;
+
+      if (contentTampered) {
+        tamperDetail = "Report data has been modified after sealing";
+        blockCheck = { valid: false, reason: tamperDetail };
+      } else if (blockTampered) {
+        tamperDetail = "Blockchain block entry has been tampered with";
+        blockCheck = { valid: false, reason: tamperDetail };
+      } else {
+        blockCheck = { valid: true, reason: "Block hash verified — report is authentic" };
+      }
     }
 
     const createdAtStr = row.created_at instanceof Date
@@ -68,8 +102,8 @@ export default async function handler(req, res) {
       reportId:  row.id,
       intact:    blockCheck.valid,
       verdict:   blockCheck.valid
-        ? "✅ Report blockchain entry is authentic and untampered"
-        : "🚨 Blockchain integrity violation detected",
+        ? "✅ Report is authentic and untampered"
+        : "🚨 Tampering detected — " + (tamperDetail || blockCheck.reason),
       timestamp: createdAtStr,
       updatedAt: row.updated_at instanceof Date ? row.updated_at.toISOString() : row.updated_at,
       blockchain: {
