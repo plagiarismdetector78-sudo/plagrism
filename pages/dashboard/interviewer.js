@@ -30,6 +30,7 @@ const [editDuration, setEditDuration] = useState(60);
 const [editInterviewType, setEditInterviewType] = useState("technical");
 
 const [searchResult, setSearchResult] = useState(null);
+const [showSearchResultModal, setShowSearchResultModal] = useState(false);
 // 🔥 Schedule Modal States
 const [scheduleModalOpen, setScheduleModalOpen] = useState(false);
 const [selectedCandidate, setSelectedCandidate] = useState(null);
@@ -123,6 +124,7 @@ const [scheduleInterviewType, setScheduleInterviewType] = useState("technical");
   setShowCandidatesModal(true);
   setSearchQuery("");
   setSearchResult(null);
+  setShowSearchResultModal(false);
 
   // Only fetch candidates list, do NOT auto-show full list
   if (candidates.length === 0) {
@@ -940,7 +942,7 @@ const updateInterview = async () => {
         </div>
         {/* GLOBAL EDIT MODAL */}
 {editModalOpen && (
-  <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-[999] flex items-center justify-center p-4">
+  <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
     <div className="bg-gray-900 w-full max-w-md rounded-2xl p-6 border border-white/10 relative">
 
       <button
@@ -1022,7 +1024,7 @@ const updateInterview = async () => {
 
         {/* Candidates Modal (Desktop) */}
         {showCandidatesModal && !isMobile && (
-          <div className="fixed inset-0 z-[45] flex items-center justify-center p-4 pt-20">
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
             {/* Backdrop */}
             <div
               className="absolute inset-0 bg-black/70 backdrop-blur-sm"
@@ -1035,7 +1037,8 @@ const updateInterview = async () => {
               role="dialog"
               aria-modal="true"
               aria-labelledby="candidates-title"
-              className="relative backdrop-blur-xl bg-gray-800/95 rounded-3xl border border-white/10 shadow-2xl w-full max-w-5xl p-6 max-h-[85vh] overflow-hidden"
+              className="relative backdrop-blur-xl bg-gray-800/95 rounded-3xl border border-white/10 shadow-2xl w-full max-w-5xl p-6 flex flex-col"
+              style={{ maxHeight: 'calc(100vh - 2rem)' }}
               onClick={(e) => e.stopPropagation()}
             >
              {/* Header Row (icon, title, search, close btn all aligned) */}
@@ -1092,7 +1095,11 @@ const updateInterview = async () => {
           c.full_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
           c.phone?.includes(searchQuery)
         );
-        setSearchResult(match || "not_found");
+        const result = match || "not_found";
+        setSearchResult(result);
+        // Close candidates modal and open result modal
+        setShowCandidatesModal(false);
+        setShowSearchResultModal(true);
       }}
       className="bg-gradient-to-r from-purple-500 to-pink-500 px-5 py-2.5 rounded-xl text-white font-medium hover:scale-105 transition"
     >
@@ -1115,7 +1122,7 @@ const updateInterview = async () => {
 
 
              {/* Body: scrollable list */}
-<div className="space-y-4 max-h-[70vh] overflow-y-auto pr-2">
+<div className="space-y-4 flex-1 min-h-0 overflow-y-auto pr-2">
 
   {/* Show count only */}
   <div className="text-gray-300 text-sm mt-4">
@@ -1168,6 +1175,205 @@ const updateInterview = async () => {
             </div>
           </div>
         )}
+        {/* Search Result Modal */}
+        {showSearchResultModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            {/* Backdrop */}
+            <div
+              className="absolute inset-0 bg-black/70 backdrop-blur-sm"
+              onClick={() => setShowSearchResultModal(false)}
+              aria-hidden="true"
+            />
+
+            <div
+              role="dialog"
+              aria-modal="true"
+              className="relative backdrop-blur-xl bg-gray-800/95 rounded-3xl border border-white/10 shadow-2xl w-full max-w-md p-6"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Close button */}
+              <button
+                onClick={() => setShowSearchResultModal(false)}
+                className="absolute top-4 right-4 text-gray-400 hover:text-white p-2 rounded-xl hover:bg-white/10 transition"
+                aria-label="Close result"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+
+              <h3 className="text-lg font-semibold text-white mb-4">Search Result</h3>
+
+              {searchResult === "not_found" ? (
+                <div className="text-center py-8">
+                  <div className="w-14 h-14 bg-red-500/20 rounded-2xl flex items-center justify-center mx-auto mb-3">
+                    <svg className="w-7 h-7 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </div>
+                  <p className="text-red-400 font-medium">No candidate found</p>
+                  <p className="text-gray-400 text-sm mt-1">No match for "{searchQuery}"</p>
+                  <button
+                    onClick={() => {
+                      setShowSearchResultModal(false);
+                      setShowCandidatesModal(true);
+                    }}
+                    className="mt-4 text-purple-400 hover:text-purple-300 text-sm underline"
+                  >
+                    Search again
+                  </button>
+                </div>
+              ) : searchResult ? (
+                <div className="space-y-4">
+                  <div className="bg-white/5 border border-white/10 rounded-2xl p-4">
+                    <div className="flex items-center space-x-3 mb-3">
+                      <div className="w-10 h-10 bg-purple-500/20 rounded-xl flex items-center justify-center flex-shrink-0">
+                        <svg className="w-5 h-5 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                        </svg>
+                      </div>
+                      <div>
+                        <h4 className="font-semibold text-white">
+                          {searchResult.full_name || searchResult.email}
+                        </h4>
+                        {searchResult.matchScore && (
+                          <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${searchResult.compatibilityColor}`}>
+                            Match: {searchResult.matchScore}/10
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="space-y-2 text-sm text-gray-400">
+                      <div className="flex items-center space-x-2">
+                        <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                        </svg>
+                        <span>{searchResult.email}</span>
+                      </div>
+                      {searchResult.phone && searchResult.phone !== "N/A" && (
+                        <div className="flex items-center space-x-2">
+                          <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
+                          </svg>
+                          <span>{searchResult.phone}</span>
+                        </div>
+                      )}
+                      {searchResult.qualification && (
+                        <div className="flex items-center space-x-2">
+                          <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 14l9-5-9-5-9 5 9 5zm0 0l6.16-3.422a12.083 12.083 0 01.665 6.479A11.952 11.952 0 0012 20.055a11.952 11.952 0 00-6.824-2.998 12.078 12.078 0 01.665-6.479L12 14z" />
+                          </svg>
+                          <span>{searchResult.qualification}</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="flex gap-3">
+                    <button
+                      onClick={() => {
+                        openScheduleModal(searchResult);
+                        setShowSearchResultModal(false);
+                      }}
+                      className="flex-1 bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white py-2.5 rounded-xl text-sm font-medium transition-all duration-300 hover:scale-105"
+                    >
+                      Schedule Interview
+                    </button>
+                    <button
+                      onClick={() => {
+                        setShowSearchResultModal(false);
+                        setShowCandidatesModal(true);
+                      }}
+                      className="flex-1 bg-white/10 hover:bg-white/20 text-white py-2.5 rounded-xl text-sm font-medium border border-white/20 transition"
+                    >
+                      Search Again
+                    </button>
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          </div>
+        )}
+
+        {/* Schedule Interview Modal */}
+        {scheduleModalOpen && selectedCandidate && (
+          <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <div
+              className="bg-gray-900 w-full max-w-md rounded-2xl p-6 border border-white/10 relative"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <button
+                className="absolute top-3 right-3 text-gray-400 hover:text-white"
+                onClick={() => setScheduleModalOpen(false)}
+              >
+                ✕
+              </button>
+
+              <h2 className="text-xl font-semibold text-white mb-1">Schedule Interview</h2>
+              <p className="text-gray-400 text-sm mb-4">
+                with {selectedCandidate.full_name || selectedCandidate.email}
+              </p>
+
+              <label className="text-gray-300 text-sm block">Field / Position</label>
+              <select
+                value={schedulePosition}
+                onChange={(e) => setSchedulePosition(e.target.value)}
+                className="w-full mt-2 mb-3 p-3 rounded-xl bg-white/10 text-white border border-white/20 focus:ring-2 focus:ring-purple-500"
+              >
+                {fieldOptions.map((option) => (
+                  <option key={option} value={option} className="bg-gray-900">{option}</option>
+                ))}
+              </select>
+
+              <label className="text-gray-300 text-sm block">Select Date</label>
+              <input
+                type="date"
+                value={selectedDate}
+                onChange={(e) => setSelectedDate(e.target.value)}
+                className="w-full mt-2 mb-3 p-3 rounded-xl bg-white/10 text-white border border-white/20 focus:ring-2 focus:ring-purple-500"
+              />
+
+              <label className="text-gray-300 text-sm block">Select Time</label>
+              <input
+                type="time"
+                value={selectedTime}
+                onChange={(e) => setSelectedTime(e.target.value)}
+                className="w-full mt-2 mb-3 p-3 rounded-xl bg-white/10 text-white border border-white/20 focus:ring-2 focus:ring-purple-500"
+              />
+
+              <label className="text-gray-300 text-sm block">Duration (minutes)</label>
+              <input
+                type="number"
+                value={scheduleDuration}
+                onChange={(e) => setScheduleDuration(parseInt(e.target.value))}
+                className="w-full mt-2 mb-3 p-3 rounded-xl bg-white/10 text-white border border-white/20 focus:ring-2 focus:ring-purple-500"
+                min="15"
+                max="180"
+              />
+
+              <label className="text-gray-300 text-sm block">Interview Type</label>
+              <select
+                value={scheduleInterviewType}
+                onChange={(e) => setScheduleInterviewType(e.target.value)}
+                className="w-full mt-2 mb-3 p-3 rounded-xl bg-white/10 text-white border border-white/20 focus:ring-2 focus:ring-purple-500"
+              >
+                <option value="technical" className="bg-gray-900">Technical</option>
+                <option value="behavioral" className="bg-gray-900">Behavioral</option>
+                <option value="hr" className="bg-gray-900">HR</option>
+                <option value="mixed" className="bg-gray-900">Mixed</option>
+              </select>
+
+              <button
+                onClick={handleScheduleInterview}
+                className="w-full mt-4 bg-gradient-to-r from-purple-500 to-pink-500 py-3 rounded-xl text-white font-semibold hover:scale-105 transition"
+              >
+                Confirm Schedule
+              </button>
+            </div>
+          </div>
+        )}
+
       </div>
     </>
   );
