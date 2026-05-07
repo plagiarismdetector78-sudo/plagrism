@@ -41,6 +41,8 @@ export default function MeetingPage() {
   const [isAudioMuted, setIsAudioMuted] = useState(false);
   const [mediaReady, setMediaReady] = useState(false);
   const [isVideoOff, setIsVideoOff] = useState(false);
+  const [isScreenSharing, setIsScreenSharing] = useState(false);
+  const screenStreamRef = useRef(null);
   const [localStream, setLocalStream] = useState(null);
   const [remoteStream, setRemoteStream] = useState(null);
   const [connectionStatus, setConnectionStatus] = useState("Connecting...");
@@ -1786,6 +1788,64 @@ const toggleVideo = () => {
   }
 };
 
+// Toggle screen share
+const toggleScreenShare = async () => {
+  if (isScreenSharing) {
+    // Stop screen share — restore camera track
+    if (screenStreamRef.current) {
+      screenStreamRef.current.getTracks().forEach((t) => t.stop());
+      screenStreamRef.current = null;
+    }
+
+    // Replace the video sender track back to camera
+    if (localStream && pcRef.current) {
+      const cameraTrack = localStream.getVideoTracks()[0];
+      if (cameraTrack) {
+        const sender = pcRef.current.getSenders().find((s) => s.track?.kind === "video");
+        if (sender) await sender.replaceTrack(cameraTrack);
+      }
+      // Restore local preview
+      if (localVideoRef.current) {
+        localVideoRef.current.srcObject = localStream;
+      }
+    }
+    setIsScreenSharing(false);
+  } else {
+    try {
+      const screenStream = await navigator.mediaDevices.getDisplayMedia({
+        video: { cursor: "always" },
+        audio: false,
+      });
+      screenStreamRef.current = screenStream;
+
+      const screenTrack = screenStream.getVideoTracks()[0];
+
+      // Replace the video sender track with screen track
+      if (pcRef.current) {
+        const sender = pcRef.current.getSenders().find((s) => s.track?.kind === "video");
+        if (sender) await sender.replaceTrack(screenTrack);
+      }
+
+      // Show screen in local preview
+      if (localVideoRef.current) {
+        const previewStream = new MediaStream([screenTrack]);
+        localVideoRef.current.srcObject = previewStream;
+      }
+
+      // Auto-stop when user clicks "Stop sharing" in browser UI
+      screenTrack.onended = () => {
+        toggleScreenShare();
+      };
+
+      setIsScreenSharing(true);
+    } catch (err) {
+      if (err.name !== "NotAllowedError") {
+        console.error("Screen share error:", err);
+      }
+    }
+  }
+};
+
 // Toggle sign language detection
 const toggleSignLanguage = () => {
   if (!signLanguageEnabled) {
@@ -3067,6 +3127,19 @@ useEffect(() => {
                   <i className={`fas fa-${transcriptionEnabled ? 'stop-circle' : 'circle-dot'} text-white`}></i>
                 </button>
               )}
+
+              {/* Screen Share */}
+              <button
+                onClick={toggleScreenShare}
+                className={`p-2.5 rounded-lg transition-all hover:scale-105 ${
+                  isScreenSharing
+                    ? 'bg-green-500 hover:bg-green-600'
+                    : 'bg-gray-700/80 hover:bg-gray-600/80'
+                }`}
+                title={isScreenSharing ? 'Stop Sharing' : 'Share Screen'}
+              >
+                <i className={`fas fa-${isScreenSharing ? 'stop-circle' : 'desktop'} text-white`}></i>
+              </button>
 
               {/* End Call */}
               <button
