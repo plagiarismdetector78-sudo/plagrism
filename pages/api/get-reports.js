@@ -43,6 +43,6 @@ export default async function handler(req, res) {
     res.status(200).json({ success: true, reports });
   } catch (error) {
     console.error('Error fetching reports:', error);
-    res.status(500).json({ success: false, message: 'Internal server error' });
+    res.status(500).json({ success: false, message: error.message || 'Internal server error' });
   }
 }

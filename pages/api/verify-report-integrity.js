@@ -1,9 +1,6 @@
 // pages/api/verify-report-integrity.js
-// Verifies a report's content hash AND its blockchain block.
-// Powers the "Integrity Check" button on the reports page.
-
 import { query } from "../../lib/db";
-import { verifyContentHash, verifyBlockHash } from "../../lib/blockchain";
+import { computeBlockHash } from "../../lib/blockchain";
 import { ensureReportSchemaReady } from "../../lib/ensureReportSchema";
 
 export default async function handler(req, res) {
@@ -19,15 +16,15 @@ export default async function handler(req, res) {
       return res.status(400).json({ success: false, message: "reportId is required" });
     }
 
-    // ── Fetch report + its block ───────────────────────────────────────────────
     const result = await query(
       `SELECT
-         ir.*,
+         ir.id, ir.created_at, ir.updated_at, ir.block_id,
          bl.id            AS ledger_id,
-         bl.block_index,
-         bl.previous_hash,
-         bl.block_hash,
-         bl.created_at    AS block_created_at
+         bl.block_index   AS bl_block_index,
+         bl.report_id     AS bl_report_id,
+         bl.previous_hash AS bl_previous_hash,
+         bl.block_hash    AS bl_block_hash,
+         bl.created_at    AS bl_created_at
        FROM interview_reports ir
        LEFT JOIN blockchain_ledger bl ON bl.id = ir.block_id
        WHERE ir.id = $1`,
@@ -40,41 +37,45 @@ export default async function handler(req, res) {
 
     const row = result.rows[0];
 
-    // ── 1. Verify content hash ─────────────────────────────────────────────────
-    const contentCheck = verifyContentHash(row);
-
-    // ── 2. Verify block hash ───────────────────────────────────────────────────
+    // ── Verify block hash ──────────────────────────────────────────────────────
     let blockCheck = { valid: false, reason: "No blockchain block linked to this report" };
+
     if (row.ledger_id) {
-      blockCheck = verifyBlockHash({
-        block_index:   row.block_index,
-        report_id:     row.id,
-        content_hash:  row.content_hash,
-        previous_hash: row.previous_hash,
-        block_hash:    row.block_hash,
-        created_at:    row.block_created_at,
+      const blCreatedAtStr = row.bl_created_at instanceof Date
+        ? row.bl_created_at.toISOString()
+        : String(row.bl_created_at);
+
+      const recomputed = computeBlockHash({
+        block_index:   row.bl_block_index,
+        report_id:     row.bl_report_id,
+        previous_hash: row.bl_previous_hash,
+        created_at:    blCreatedAtStr,
       });
+
+      const valid = recomputed === row.bl_block_hash;
+      blockCheck = {
+        valid,
+        reason: valid ? "Block hash verified" : "Block hash mismatch — blockchain entry has been tampered with",
+      };
     }
 
-    // ── 3. Overall verdict ─────────────────────────────────────────────────────
-    const intact = contentCheck.valid && blockCheck.valid;
+    const createdAtStr = row.created_at instanceof Date
+      ? row.created_at.toISOString()
+      : row.created_at;
 
     return res.status(200).json({
       success: true,
-      reportId:    row.id,
-      intact,
-      verdict:     intact ? "✅ Report is authentic and untampered" : "🚨 Integrity violation detected",
-      timestamp:   row.created_at,
-      updatedAt:   row.updated_at,
-      contentHash: {
-        stored:   row.content_hash,
-        valid:    contentCheck.valid,
-        reason:   contentCheck.reason,
-      },
+      reportId:  row.id,
+      intact:    blockCheck.valid,
+      verdict:   blockCheck.valid
+        ? "✅ Report blockchain entry is authentic and untampered"
+        : "🚨 Blockchain integrity violation detected",
+      timestamp: createdAtStr,
+      updatedAt: row.updated_at instanceof Date ? row.updated_at.toISOString() : row.updated_at,
       blockchain: {
-        blockIndex:   row.block_index ?? null,
-        blockHash:    row.block_hash  ?? null,
-        previousHash: row.previous_hash ?? null,
+        blockIndex:   row.bl_block_index   ?? null,
+        blockHash:    row.bl_block_hash    ?? null,
+        previousHash: row.bl_previous_hash ?? null,
         valid:        blockCheck.valid,
         reason:       blockCheck.reason,
       },

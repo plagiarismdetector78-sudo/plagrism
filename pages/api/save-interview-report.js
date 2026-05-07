@@ -38,7 +38,7 @@ export default async function handler(req, res) {
 
     const enhancedEvaluation = { ...evaluation, questionsCount };
 
-    const { reportId, blockIndex, contentHash, blockHash, createdAt } =
+    const { reportId, blockIndex, blockId, blockHash, createdAt } =
       await saveReportWithBlock({
         interview_id:      interviewId,
         interviewer_id:    interviewerId,
@@ -57,13 +57,12 @@ export default async function handler(req, res) {
         report_data:       enhancedEvaluation,
       });
 
-    console.log(`🔗 Block #${blockIndex} created | content_hash: ${contentHash.slice(0, 16)}… | block_hash: ${blockHash.slice(0, 16)}…`);
+    console.log(`🔗 Block #${blockIndex} created | block_hash: ${blockHash.slice(0, 16)}…`);
 
     return res.status(200).json({
       success: true,
       reportId,
       blockIndex,
-      contentHash,
       blockHash,
       createdAt,
       message: "Interview report saved and sealed on blockchain",

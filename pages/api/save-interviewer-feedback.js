@@ -1,6 +1,5 @@
 // pages/api/save-interviewer-feedback.js
-import { query, withTransaction } from "../../lib/db";
-import { computeContentHash, computeBlockHash } from "../../lib/blockchain";
+import { query } from "../../lib/db";
 import { ensureReportSchemaReady } from "../../lib/ensureReportSchema";
 
 export default async function handler(req, res) {
@@ -25,10 +24,7 @@ export default async function handler(req, res) {
       : null;
 
     if (normalizedDecision && !["pass", "fail"].includes(normalizedDecision)) {
-      return res.status(400).json({
-        success: false,
-        message: "Decision must be either pass or fail",
-      });
+      return res.status(400).json({ success: false, message: "Decision must be either pass or fail" });
     }
 
     const formattedFeedback = normalizedDecision
@@ -50,14 +46,12 @@ export default async function handler(req, res) {
 
     const { meeting_room_id: meetingRoomId } = interviewResult.rows[0];
 
-    // ── Find the linked report ─────────────────────────────────────────────────
+    // ── Update the linked report's evaluation data ─────────────────────────────
     const reportLookup = await query(
-      `SELECT ir.*, bl.id AS ledger_id, bl.block_index, bl.previous_hash
-       FROM interview_reports ir
-       LEFT JOIN blockchain_ledger bl ON bl.id = ir.block_id
-       WHERE ir.interview_id = $1 OR ir.room_id = $2
-       ORDER BY ir.created_at DESC
-       LIMIT 1`,
+      `SELECT id, report_data, evaluation_data
+       FROM interview_reports
+       WHERE interview_id = $1 OR room_id = $2
+       ORDER BY created_at DESC LIMIT 1`,
       [interviewId, meetingRoomId || ""]
     );
 
@@ -66,7 +60,6 @@ export default async function handler(req, res) {
     if (reportLookup.rows.length > 0) {
       const row = reportLookup.rows[0];
 
-      // Build merged evaluation data
       let baseData = {};
       if (row.report_data && typeof row.report_data === "object") {
         baseData = row.report_data;
@@ -85,67 +78,17 @@ export default async function handler(req, res) {
         interviewerDecisionAt:   new Date().toISOString(),
       };
 
-      const updatedAt = new Date().toISOString();
-
-      // Re-compute content hash with updated fields
-      const newContentHash = computeContentHash({
-        interview_id:      row.interview_id,
-        interviewer_id:    row.interviewer_id,
-        candidate_id:      row.candidate_id,
-        interviewer_name:  row.interviewer_name,
-        candidate_name:    row.candidate_name,
-        interviewer_email: row.interviewer_email,
-        candidate_email:   row.candidate_email,
-        question_category: row.question_category,
-        questions_asked:   row.questions_asked,
-        full_transcript:   row.full_transcript,
-        evaluation_data:   JSON.stringify(mergedData),
-        room_id:           row.room_id,
-        duration:          row.duration,
-        report_type:       row.report_type,
-        report_data:       JSON.stringify(mergedData),
-        created_at:        row.created_at,   // original timestamp preserved
-      });
-
-      await withTransaction(async (client) => {
-        // Update report row
-        await client.query(
-          `UPDATE interview_reports
-           SET report_data    = $1::jsonb,
-               evaluation_data = $2,
-               content_hash   = $3,
-               updated_at     = $4
-           WHERE id = $5`,
-          [
-            JSON.stringify(mergedData),
-            JSON.stringify(mergedData),
-            newContentHash,
-            updatedAt,
-            row.id,
-          ]
-        );
-
-        // Update the linked blockchain block with the new content hash
-        if (row.ledger_id) {
-          const newBlockHash = computeBlockHash({
-            block_index:   row.block_index,
-            report_id:     row.id,
-            content_hash:  newContentHash,
-            previous_hash: row.previous_hash,
-            created_at:    row.created_at,
-          });
-
-          await client.query(
-            `UPDATE blockchain_ledger
-             SET content_hash = $1, block_hash = $2
-             WHERE id = $3`,
-            [newContentHash, newBlockHash, row.ledger_id]
-          );
-        }
-      });
+      await query(
+        `UPDATE interview_reports
+         SET report_data     = $1::jsonb,
+             evaluation_data = $2,
+             updated_at      = NOW()
+         WHERE id = $3`,
+        [JSON.stringify(mergedData), JSON.stringify(mergedData), row.id]
+      );
 
       updatedReportId = row.id;
-      console.log(`✅ Feedback saved & report re-hashed | report #${row.id} | new hash: ${newContentHash.slice(0, 16)}…`);
+      console.log(`✅ Feedback saved for report #${row.id}`);
     }
 
     return res.status(200).json({

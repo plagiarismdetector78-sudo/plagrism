@@ -331,18 +331,6 @@ const ReportsPage = () => {
                       </div>
                     </div>
 
-                    {/* Content Hash */}
-                    <div className={`rounded-xl p-4 border text-sm space-y-2 ${integrityResult.contentHash.valid ? 'bg-green-500/5 border-green-500/20' : 'bg-red-500/5 border-red-500/20'}`}>
-                      <div className="flex items-center gap-2 font-semibold text-white">
-                        <i className={`fas ${integrityResult.contentHash.valid ? 'fa-check-circle text-green-400' : 'fa-times-circle text-red-400'}`}></i>
-                        Content Hash (SHA-256)
-                      </div>
-                      <div className="text-gray-400 text-xs font-mono break-all">{integrityResult.contentHash.stored}</div>
-                      <div className={`text-xs ${integrityResult.contentHash.valid ? 'text-green-400' : 'text-red-400'}`}>
-                        {integrityResult.contentHash.reason}
-                      </div>
-                    </div>
-
                     {/* Blockchain Block */}
                     <div className={`rounded-xl p-4 border text-sm space-y-2 ${integrityResult.blockchain.valid ? 'bg-green-500/5 border-green-500/20' : 'bg-red-500/5 border-red-500/20'}`}>
                       <div className="flex items-center gap-2 font-semibold text-white">
