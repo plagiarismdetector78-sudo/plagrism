@@ -2283,6 +2283,9 @@ useEffect(() => {
 
   // Generate question-wise interview report
   const checkPlagiarism = async () => {
+    // ⚡ Set loading state immediately so the button responds on first click
+    setIsCheckingPlagiarism(true);
+
     logInterviewQA("checkPlagiarism:start", {
       role: userRole,
       currentQuestionId: getQuestionId(currentQuestion),
@@ -2355,10 +2358,10 @@ useEffect(() => {
 
     if (!answersByQuestion.length) {
       alert("No question-wise answers found. Please record answers before generating report.");
+      setIsCheckingPlagiarism(false);
       return;
     }
 
-    setIsCheckingPlagiarism(true);
     try {
       console.log("📝 Generating question-wise report for", answersByQuestion.length, "answers");
       const questionEvaluations = await evaluateQuestionWiseAnswers(answersByQuestion);
@@ -2682,12 +2685,6 @@ useEffect(() => {
         <div className="px-6 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-4">
-              {/* Status Indicator */}
-              <div className="flex items-center space-x-3 bg-gray-800/50 px-4 py-2 rounded-xl border border-white/10">
-                <div className={`w-3 h-3 rounded-full ${getStatusColor()} animate-pulse shadow-lg`}></div>
-                <span className="text-sm font-semibold text-white">{getStatusText()}</span>
-              </div>
-              
               {/* Room ID */}
               <div className="hidden md:flex items-center space-x-2 bg-gray-800/50 px-4 py-2 rounded-xl border border-white/10">
                 <i className="fas fa-door-open text-purple-400 text-sm"></i>
@@ -2841,252 +2838,192 @@ useEffect(() => {
           )}
         </div>
 
-        {/* Integrated Transcript Sidebar - Interviewer Only */}
+        {/* Right Sidebar - Interviewer Only: Transcript + Question Panel */}
         {userRole === 'interviewer' && showTranscript && (
-          <div className="w-96 bg-gray-900/95 backdrop-blur-xl border-l border-white/10 flex flex-col shadow-2xl animate-in slide-in-from-right duration-300 hidden lg:flex">
-            {/* Transcript Header */}
-            <div className="bg-gradient-to-r from-purple-900/50 to-indigo-900/50 px-6 py-4 border-b border-white/10">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-3">
-                  {transcriptionEnabled && (
-                    <div className="relative flex h-3 w-3">
-                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
-                      <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span>
-                    </div>
-                  )}
-                  {signLanguageEnabled && (
-                    <div className="relative flex h-3 w-3">
-                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
-                      <span className="relative inline-flex rounded-full h-3 w-3 bg-blue-500"></span>
-                    </div>
-                  )}
-                  <i className={`fas ${signLanguageEnabled ? 'fa-hands' : 'fa-microphone-lines'} text-${signLanguageEnabled ? 'blue' : 'purple'}-400 text-lg`}></i>
-                  <h3 className="text-white font-bold text-lg">Live Transcript</h3>
-                </div>
-                <button
-                  onClick={() => setShowTranscript(false)}
-                  className="text-gray-400 hover:text-white transition-colors p-2 rounded-lg hover:bg-white/10"
-                >
-                  <i className="fas fa-times text-lg"></i>
-                </button>
-              </div>
-              <div className="flex items-center justify-between mt-2">
-                <p className="text-gray-400 text-xs">
-                  {signLanguageEnabled ? 'Sign language detection active' : 'Real-time speech transcription'}
-                </p>
-                {signLanguageEnabled && isProcessingSign && (
-                  <span className="text-xs text-blue-400 animate-pulse">
-                    <i className="fas fa-spinner fa-spin mr-1"></i>
-                    Processing...
-                  </span>
-                )}
-              </div>
-            </div>
-            
-            {/* Transcript Content */}
-            <div className="flex-1 overflow-y-auto p-6 space-y-4 scrollbar-thin scrollbar-thumb-purple-500/50 scrollbar-track-transparent">
-              {fullTranscript ? (
-                <div className="space-y-3">
-                  {fullTranscript.split('. ').filter(s => s.trim()).map((sentence, idx) => (
-                    <div key={idx} className="bg-white/5 rounded-xl p-4 border border-white/10 hover:bg-white/10 transition-all">
-                      <p className="text-gray-100 leading-relaxed">{sentence.trim()}.</p>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="flex flex-col items-center justify-center h-full text-center">
-                  <div className="w-20 h-20 bg-gray-800 rounded-2xl flex items-center justify-center mb-4">
-                    <i className="fas fa-microphone-slash text-3xl text-gray-600"></i>
+          <div className="w-96 bg-gray-900/95 backdrop-blur-xl border-l border-white/10 flex flex-col shadow-2xl animate-in slide-in-from-right duration-300 hidden lg:flex"
+               style={{ height: '100%', overflow: 'hidden' }}>
+
+            {/* Single scrollable column — everything scrolls together */}
+            <div className="flex-1 overflow-y-auto scrollbar-thin scrollbar-thumb-purple-500/40 scrollbar-track-transparent"
+                 style={{ minHeight: 0 }}>
+
+            {/* ── TRANSCRIPT SECTION ── */}
+            <div className="flex flex-col border-b border-white/10">
+              {/* Transcript Header */}
+              <div className="bg-gradient-to-r from-purple-900/50 to-indigo-900/50 px-4 py-3 border-b border-white/10 sticky top-0 z-10">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-2">
+                    {transcriptionEnabled && (
+                      <div className="relative flex h-3 w-3">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                        <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span>
+                      </div>
+                    )}
+                    {signLanguageEnabled && (
+                      <div className="relative flex h-3 w-3">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
+                        <span className="relative inline-flex rounded-full h-3 w-3 bg-blue-500"></span>
+                      </div>
+                    )}
+                    <i className={`fas ${signLanguageEnabled ? 'fa-hands' : 'fa-microphone-lines'} text-${signLanguageEnabled ? 'blue' : 'purple'}-400`}></i>
+                    <h3 className="text-white font-bold">Live Transcript</h3>
                   </div>
-                  <p className="text-gray-500 font-medium">No transcript yet</p>
-                  <p className="text-gray-600 text-sm mt-2">Waiting for candidate to start recording...</p>
-                </div>
-              )}
-            </div>
-            
-            {/* Detected Signs Display (when sign language is enabled) */}
-            {signLanguageEnabled && detectedSigns.length > 0 && (
-              <div className="bg-blue-900/20 px-6 py-4 border-t border-blue-500/30">
-                <div className="flex items-center justify-between mb-3">
-                  <h4 className="text-blue-400 text-sm font-semibold">
-                    <i className="fas fa-hands mr-2"></i>
-                    Detected Signs
-                  </h4>
                   <button
-                    onClick={() => setDetectedSigns([])}
-                    className="text-xs text-gray-400 hover:text-white"
+                    onClick={() => setShowTranscript(false)}
+                    className="text-gray-400 hover:text-white transition-colors p-1.5 rounded-lg hover:bg-white/10"
                   >
-                    Clear
+                    <i className="fas fa-times"></i>
                   </button>
                 </div>
-                <div className="flex flex-wrap gap-2 max-h-24 overflow-y-auto scrollbar-thin scrollbar-thumb-blue-500/50">
-                  {detectedSigns.slice(-10).map((detection, idx) => (
-                    <div
-                      key={idx}
-                      className="bg-blue-500/20 border border-blue-500/30 rounded-lg px-3 py-1.5 flex items-center space-x-2"
-                    >
-                      <span className="text-white font-bold text-lg">{detection.sign}</span>
-                      <span className="text-blue-300 text-xs">
-                        {Math.round(detection.confidence * 100)}%
-                      </span>
+                <p className="text-gray-400 text-xs mt-1">
+                  {signLanguageEnabled ? 'Sign language detection active' : 'Real-time speech transcription'}
+                </p>
+              </div>
+
+              {/* Transcript Content — fixed height, inner scroll */}
+              <div className="p-4 space-y-3" style={{ minHeight: '180px', maxHeight: '280px', overflowY: 'auto' }}>
+                {fullTranscript ? (
+                  <div className="space-y-2">
+                    {fullTranscript.split('. ').filter(s => s.trim()).map((sentence, idx) => (
+                      <div key={idx} className="bg-white/5 rounded-xl p-3 border border-white/10 hover:bg-white/10 transition-all">
+                        <p className="text-gray-100 text-sm leading-relaxed">{sentence.trim()}.</p>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="flex flex-col items-center justify-center py-8 text-center">
+                    <div className="w-14 h-14 bg-gray-800 rounded-2xl flex items-center justify-center mb-3">
+                      <i className="fas fa-microphone-slash text-2xl text-gray-600"></i>
                     </div>
-                  ))}
+                    <p className="text-gray-500 font-medium text-sm">No transcript yet</p>
+                    <p className="text-gray-600 text-xs mt-1">Waiting for candidate to start recording...</p>
+                  </div>
+                )}
+              </div>
+
+              {/* Detected Signs */}
+              {signLanguageEnabled && detectedSigns.length > 0 && (
+                <div className="bg-blue-900/20 px-4 py-3 border-t border-blue-500/30">
+                  <div className="flex items-center justify-between mb-2">
+                    <h4 className="text-blue-400 text-xs font-semibold">
+                      <i className="fas fa-hands mr-1"></i>Detected Signs
+                    </h4>
+                    <button onClick={() => setDetectedSigns([])} className="text-xs text-gray-400 hover:text-white">Clear</button>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5 max-h-16 overflow-y-auto">
+                    {detectedSigns.slice(-8).map((detection, idx) => (
+                      <div key={idx} className="bg-blue-500/20 border border-blue-500/30 rounded-lg px-2 py-1 flex items-center space-x-1">
+                        <span className="text-white font-bold">{detection.sign}</span>
+                        <span className="text-blue-300 text-xs">{Math.round(detection.confidence * 100)}%</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Transcript Footer */}
+              <div className="bg-black/30 px-4 py-2 border-t border-white/10">
+                <div className="flex items-center justify-between text-xs text-gray-400">
+                  <span><i className="fas fa-align-left mr-1"></i>{fullTranscript ? fullTranscript.split(' ').length : 0} words</span>
+                  <span><i className="fas fa-clock mr-1"></i>{fullTranscript ? Math.ceil(fullTranscript.split(' ').length / 150) : 0} min read</span>
                 </div>
               </div>
-            )}
-            
-            {/* Transcript Footer - Stats */}
-            <div className="bg-black/30 px-6 py-4 border-t border-white/10">
-              <div className="flex items-center justify-between text-sm">
-                <div className="flex items-center space-x-2 text-gray-400">
-                  <i className="fas fa-align-left"></i>
-                  <span>{fullTranscript ? fullTranscript.split(' ').length : 0} words</span>
-                </div>
-                <div className="flex items-center space-x-2 text-gray-400">
-                  <i className="fas fa-clock"></i>
-                  <span>{fullTranscript ? Math.ceil(fullTranscript.split(' ').length / 150) : 0} min read</span>
+            </div>
+
+            {/* ── QUESTION PANEL SECTION ── */}
+            <div className="flex flex-col">
+              {/* Section Header — sticky so it stays visible while scrolling */}
+              <div className="bg-gradient-to-r from-indigo-900/50 to-purple-900/50 px-4 py-2.5 border-b border-white/10 sticky top-[88px] z-10">
+                <div className="flex items-center space-x-2">
+                  <i className="fas fa-question-circle text-indigo-400 text-sm"></i>
+                  <h3 className="text-white font-bold text-sm">Interview Panel</h3>
+                  {questions.length > 0 && (
+                    <span className="ml-auto text-xs text-gray-400">
+                      {currentQuestionIndex + 1} / {questions.length}
+                    </span>
+                  )}
                 </div>
               </div>
+
+              {/* QuestionPanel rendered inline — no fixed height, grows naturally */}
+              <QuestionPanel
+                  userRole={userRole}
+                  currentQuestion={currentQuestion}
+                  questions={questions}
+                  currentQuestionIndex={currentQuestionIndex}
+                  questionCategory={questionCategory}
+                  loadingQuestions={loadingQuestions}
+                  plagiarismScore={plagiarismScore}
+                  plagiarismDetails={plagiarismDetails}
+                  isCheckingPlagiarism={isCheckingPlagiarism}
+                  transcript={currentQuestionTranscript}
+                  typedAnswer={currentQuestionTyped}
+                  onTypedAnswerChange={(value) => {
+                    const qid = getQuestionId(currentQuestion);
+                    const prevValue = currentQuestionTyped;
+                    setCurrentQuestionTyped(value);
+                    if (qid) {
+                      ensureTypedMeta(qid);
+                      setTypedForQuestion(qid, value);
+                      const nextValue = String(value || "");
+                      const prevText = String(prevValue || "");
+                      const delta = Math.max(0, nextValue.length - prevText.length);
+                      const lastPasteAt = lastPasteAtByQuestionRef.current[String(qid)] || 0;
+                      const recentlyPasted = Date.now() - lastPasteAt <= 400;
+                      if (delta >= 5 && !recentlyPasted) {
+                        recordTypingEvent(qid, { type: "paste", insertedTextLength: delta });
+                      } else {
+                        recordTypingEvent(qid, { type: "keystroke" });
+                      }
+                    }
+                    if (socket && roomId && userRole === "candidate" && qid) {
+                      if (typedEmitTimerRef.current) clearTimeout(typedEmitTimerRef.current);
+                      typedEmitTimerRef.current = setTimeout(() => {
+                        try {
+                          const metaNow = questionTypedMetaMapRef.current[String(qid)] || null;
+                          socket.emit("typed-answer-update", {
+                            roomId, questionId: qid,
+                            typedAnswer: String(value || ""),
+                            meta: metaNow, timestamp: Date.now(),
+                          });
+                        } catch { /* ignore */ }
+                      }, 250);
+                    }
+                  }}
+                  onTypedInputEvent={(evt) => {
+                    const qid = getQuestionId(currentQuestion);
+                    if (!qid) return;
+                    ensureTypedMeta(qid);
+                    recordTypingEvent(qid, evt);
+                  }}
+                  onStartTest={startTest}
+                  testStarted={testStarted}
+                  transcriptionEnabled={transcriptionEnabled}
+                  onNextQuestion={nextQuestion}
+                  onPreviousQuestion={previousQuestion}
+                  onCheckPlagiarism={checkPlagiarism}
+                  onLoadQuestions={loadQuestions}
+                  onCategoryChange={(category) => setQuestionCategory(category)}
+                  availableCategories={lockedCategory ? [lockedCategory] : domainCategories}
+                  lockCategorySelection={Boolean(lockedCategory)}
+                  showPanel={true}
+                  onTogglePanel={() => {}}
+                  isMinimized={false}
+                />
+            </div>
+
             </div>
           </div>
         )}
       </div>
 
-      {/* Question Panel */}
-      <QuestionPanel
-        userRole={userRole}
-        currentQuestion={currentQuestion}
-        questions={questions}
-        currentQuestionIndex={currentQuestionIndex}
-        questionCategory={questionCategory}
-        loadingQuestions={loadingQuestions}
-        plagiarismScore={plagiarismScore}
-        plagiarismDetails={plagiarismDetails}
-        isCheckingPlagiarism={isCheckingPlagiarism}
-        transcript={currentQuestionTranscript}
-        typedAnswer={currentQuestionTyped}
-        onTypedAnswerChange={(value) => {
-          const qid = getQuestionId(currentQuestion);
-          const prevValue = currentQuestionTyped;
-          setCurrentQuestionTyped(value);
-          if (qid) {
-            ensureTypedMeta(qid);
-            setTypedForQuestion(qid, value);
-            // Fallback telemetry: if browser doesn't fire beforeinput reliably,
-            // estimate typing vs paste from delta length at change-time.
-            const nextValue = String(value || "");
-            const prevText = String(prevValue || "");
-            const delta = Math.max(0, nextValue.length - prevText.length);
-            logTypingDebug("onTypedAnswerChange", {
-              role: userRole,
-              questionId: String(qid),
-              prevLen: prevText.length,
-              nextLen: nextValue.length,
-              delta,
-            });
-            const lastPasteAt = lastPasteAtByQuestionRef.current[String(qid)] || 0;
-            const recentlyPasted = Date.now() - lastPasteAt <= 400;
-            if (delta >= 5 && !recentlyPasted) {
-              // Heuristic paste detection (fallback) — avoid double counting when onPaste already fired.
-              recordTypingEvent(qid, { type: "paste", insertedTextLength: delta });
-            } else {
-              recordTypingEvent(qid, { type: "keystroke" });
-            }
-          }
-
-          // Candidate pushes typed updates to interviewer (debounced).
-          if (socket && roomId && userRole === "candidate" && qid) {
-            if (typedEmitTimerRef.current) clearTimeout(typedEmitTimerRef.current);
-            typedEmitTimerRef.current = setTimeout(() => {
-              try {
-                const metaNow = questionTypedMetaMapRef.current[String(qid)] || null;
-                logTypingDebug("typed-answer-update:emitting", {
-                  role: userRole,
-                  questionId: String(qid),
-                  typedLen: String(value || "").length,
-                  metaNow,
-                });
-                socket.emit("typed-answer-update", {
-                  roomId,
-                  questionId: qid,
-                  typedAnswer: String(value || ""),
-                  meta: metaNow,
-                  timestamp: Date.now(),
-                });
-                logInterviewQA("typed-answer-update:emitted", {
-                  questionId: String(qid),
-                  typedLen: String(value || "").length,
-                });
-              } catch {
-                // ignore
-              }
-            }, 250);
-          }
-        }}
-        onTypedInputEvent={(evt) => {
-          const qid = getQuestionId(currentQuestion);
-          if (!qid) return;
-          ensureTypedMeta(qid);
-          logTypingDebug("onTypedInputEvent", { role: userRole, questionId: String(qid), evt });
-          recordTypingEvent(qid, evt);
-        }}
-        onStartTest={startTest}
-        testStarted={testStarted}
-        transcriptionEnabled={transcriptionEnabled}
-        onNextQuestion={nextQuestion}
-        onPreviousQuestion={previousQuestion}
-        onCheckPlagiarism={checkPlagiarism}
-        onLoadQuestions={loadQuestions}
-        onCategoryChange={(category) => {
-          setQuestionCategory(category);
-        }}
-        availableCategories={lockedCategory ? [lockedCategory] : domainCategories}
-        lockCategorySelection={Boolean(lockedCategory)}
-        showPanel={showQuestionPanel}
-        onTogglePanel={() => setShowQuestionPanel(!showQuestionPanel)}
-        isMinimized={isPanelMinimized}
-      />
-
       {/* Minimal Control Bar */}
       <div className={`bg-black/80 backdrop-blur-md border-t border-white/10 transition-all duration-300 z-50 ${showControls ? 'translate-y-0' : 'translate-y-full'}`}>
         <div className="px-4 py-2.5">
           <div className="flex justify-between items-center max-w-6xl mx-auto">
-            {/* Left: Interview Panel Toggle + Minimize */}
-            <div className="flex items-center space-x-1">
-              <button
-                onClick={() => {
-                  if (!showQuestionPanel) {
-                    setShowQuestionPanel(true);
-                    setIsPanelMinimized(false);
-                  } else {
-                    setShowQuestionPanel(!showQuestionPanel);
-                  }
-                }}
-                className={`flex items-center space-x-2 px-3 py-2 rounded-lg transition-all hover:scale-105 ${showQuestionPanel
-                  ? 'bg-purple-600/80 hover:bg-purple-500/80 text-white'
-                  : 'bg-gray-700/80 hover:bg-gray-600/80 text-gray-300'
-                  }`}
-              >
-                <i className={`fas fa-${showQuestionPanel ? 'chevron-down' : 'chevron-up'} text-sm`}></i>
-                <span className="text-xs font-semibold hidden sm:inline">Interview Panel</span>
-              </button>
 
-              {/* Minimize / Restore — only shown when panel is open */}
-              {showQuestionPanel && (
-                <button
-                  onClick={() => setIsPanelMinimized(v => !v)}
-                  title={isPanelMinimized ? 'Restore panel' : 'Minimize panel'}
-                  className={`flex items-center space-x-1.5 px-3 py-2 rounded-lg transition-all hover:scale-105 text-xs font-semibold ${
-                    isPanelMinimized
-                      ? 'bg-purple-500/80 hover:bg-purple-400/80 text-white'
-                      : 'bg-gray-700/80 hover:bg-gray-600/80 text-gray-300'
-                  }`}
-                >
-                  <i className={`fas fa-${isPanelMinimized ? 'expand-alt' : 'compress-alt'} text-sm`}></i>
-                  <span className="hidden sm:inline">{isPanelMinimized ? 'Restore' : 'Minimize'}</span>
-                </button>
-              )}
-            </div>
+            {/* Left: empty spacer to keep controls centered */}
+            <div className="w-24"></div>
 
             {/* Center: Main Controls */}
             <div className="flex items-center space-x-2">
@@ -3196,11 +3133,8 @@ useEffect(() => {
               )}
             </div>
 
-            {/* Right: Connection Status */}
-            <div className="hidden md:flex items-center space-x-2 text-xs">
-              <div className={`w-2 h-2 rounded-full ${getStatusColor()} animate-pulse`}></div>
-              <span className="text-gray-300 font-medium">{getStatusText()}</span>
-            </div>
+            {/* Right: spacer to balance layout */}
+            <div className="w-24"></div>
           </div>
         </div>
       </div>

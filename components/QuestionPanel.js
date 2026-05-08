@@ -50,55 +50,47 @@ export default function QuestionPanel({
     const hasPlagResults = plagiarismScore !== null || (userRole === 'interviewer' && transcript && transcript.length > 0);
 
     return (
-        <div className={`fixed left-0 right-0 z-40 transition-all duration-500 ease-in-out ${showPanel ? 'bottom-12 translate-y-0' : 'bottom-12 translate-y-full'
-            }`}>
-            {/* Enhanced Glassmorphism Container */}
-            <div className={`bg-gradient-to-b from-gray-900/95 via-gray-900/90 to-gray-900/95 backdrop-blur-3xl border-t border-white/20 shadow-[0_-20px_60px_rgba(0,0,0,0.7)] flex flex-col w-full relative overflow-hidden transition-all duration-500 ease-in-out ${isMinimized ? 'h-0' : 'h-[38vh] max-h-[360px]'}`}>
+        <div className="w-full">
+            {/* Main Content */}
+            <div className="bg-gradient-to-b from-gray-900/95 via-gray-900/90 to-gray-900/95 backdrop-blur-3xl w-full relative">
                 {/* Animated Background Gradient */}
                 <div className="absolute inset-0 bg-gradient-to-br from-purple-500/5 via-transparent to-blue-500/5 pointer-events-none"></div>
-                <div className="absolute top-0 left-1/4 w-96 h-96 bg-purple-500/10 rounded-full blur-3xl animate-pulse pointer-events-none"></div>
-                <div className="absolute bottom-0 right-1/4 w-96 h-96 bg-blue-500/10 rounded-full blur-3xl animate-pulse pointer-events-none" style={{ animationDelay: '1s' }}></div>
 
-                {/* Main Content Flex - Full Width */}
-                <div className="flex-1 overflow-hidden px-4 pt-3 pb-2 md:px-6 md:pt-4 md:pb-3 relative z-10 min-h-0">
-                    <div className="flex gap-4 h-full w-full min-h-0">
+                {/* Main Content */}
+                <div className="px-3 pt-3 pb-3 relative z-10">
+                    <div className="flex flex-col gap-3 w-full">
 
-                        {/* LEFT: Categories (Interviewer Only) */}
+                        {/* TOP: Categories (Interviewer Only) */}
                         {userRole === 'interviewer' && (
-                            <div className="flex-shrink-0 w-56 lg:w-64 flex flex-col h-full">
-                                <div className="bg-gradient-to-b from-black/30 to-black/20 rounded-xl border border-white/10 p-3 h-full flex flex-col backdrop-blur-md hover:border-white/20 transition-all duration-300 shadow-xl shadow-black/20">
-                                    <div className="flex items-center space-x-2 mb-3">
+                            <div className="flex-shrink-0 flex flex-col">
+                                <div className="bg-gradient-to-b from-black/30 to-black/20 rounded-xl border border-white/10 p-3 flex flex-col backdrop-blur-md hover:border-white/20 transition-all duration-300">
+                                    <div className="flex items-center space-x-2 mb-2">
                                         <i className="fas fa-layer-group text-purple-400 text-xs"></i>
                                         <h4 className="text-[10px] font-bold text-gray-300 uppercase tracking-widest">Knowledge Domains</h4>
                                     </div>
-                                    <div className="flex-1 overflow-y-auto space-y-1.5 pr-1 scrollbar-thin scrollbar-thumb-purple-500/30 scrollbar-track-transparent">
+                                    <div className="flex flex-wrap gap-1.5 mb-2">
                                         {categories.map(cat => (
                                             <button
                                                 key={cat}
                                                 onClick={() => !lockCategorySelection && onCategoryChange(cat)}
                                                 disabled={lockCategorySelection}
-                                                className={`w-full text-left px-3 py-2 rounded-lg text-xs transition-all duration-300 flex items-center justify-between group relative overflow-hidden ${
+                                                className={`px-2.5 py-1 rounded-lg text-[10px] transition-all duration-300 flex items-center space-x-1 ${
                                                     questionCategory === cat
-                                                        ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-lg shadow-purple-900/30 scale-[1.02]'
+                                                        ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-lg shadow-purple-900/30'
                                                         : lockCategorySelection
                                                             ? 'text-gray-500 border border-white/5 cursor-not-allowed'
-                                                            : 'text-gray-400 hover:bg-white/10 hover:text-white hover:scale-[1.01] border border-white/5'
+                                                            : 'text-gray-400 hover:bg-white/10 hover:text-white border border-white/5'
                                                 }`}
                                             >
-                                                <span className="relative z-10 font-semibold flex items-center space-x-1.5">
-                                                    {questionCategory === cat && <i className="fas fa-check-circle text-[10px]"></i>}
-                                                    <span>{cat}</span>
-                                                </span>
-                                                {questionCategory === cat && (
-                                                    <i className="fas fa-arrow-right text-[10px] relative z-10 animate-pulse"></i>
-                                                )}
+                                                {questionCategory === cat && <i className="fas fa-check-circle text-[9px]"></i>}
+                                                <span className="font-semibold">{cat}</span>
                                             </button>
                                         ))}
                                     </div>
                                     <button
                                         onClick={onLoadQuestions}
                                         disabled={loadingQuestions}
-                                        className="mt-3 w-full py-2.5 bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 hover:from-blue-500 hover:via-indigo-500 hover:to-purple-500 text-white rounded-lg text-[10px] font-bold uppercase tracking-wider shadow-lg shadow-blue-900/30 transition-all duration-300 active:scale-[0.98] flex items-center justify-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                                        className="w-full py-2 bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 hover:from-blue-500 hover:via-indigo-500 hover:to-purple-500 text-white rounded-lg text-[10px] font-bold uppercase tracking-wider shadow-lg transition-all duration-300 flex items-center justify-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed"
                                     >
                                         {loadingQuestions ? (
                                             <>
@@ -108,7 +100,7 @@ export default function QuestionPanel({
                                         ) : (
                                             <>
                                                 <i className="fas fa-sync-alt"></i>
-                                                <span>Load New Bank.</span>
+                                                <span>Load New Bank</span>
                                             </>
                                         )}
                                     </button>
@@ -116,8 +108,8 @@ export default function QuestionPanel({
                             </div>
                         )}
 
-                        {/* CENTER: Question & Transcript */}
-                        <div className="flex-1 flex flex-col h-full space-y-4 min-w-0 overflow-y-auto scrollbar-thin scrollbar-thumb-purple-500/30 scrollbar-track-transparent">
+                        {/* MIDDLE: Question */}
+                        <div className="flex flex-col min-w-0">
                             {currentQuestion ? (
                                 <div className="bg-gradient-to-br from-black/30 via-black/20 to-black/30 rounded-xl border border-white/10 p-4 md:p-5 flex flex-col relative overflow-visible group hover:border-white/20 transition-all duration-300 shadow-xl shadow-black/20">
                                     {/* Enhanced Ambient Glow */}
@@ -244,162 +236,7 @@ export default function QuestionPanel({
                             )}
                         </div>
 
-                        {/* RIGHT: Enhanced Analysis (Conditional) - ONLY show when analysis is complete */}
-                        {plagiarismScore !== null && (
-                                <div className="flex-shrink-0 w-64 lg:w-72 xl:w-80 flex flex-col h-full animate-in slide-in-from-right duration-500 min-h-0">
-                                    <div className="bg-gradient-to-br from-black/30 via-black/20 to-black/30 rounded-xl border border-white/10 p-4 h-full flex flex-col backdrop-blur-md relative overflow-y-auto shadow-xl shadow-black/20 hover:border-white/20 transition-all duration-300 scrollbar-thin scrollbar-thumb-emerald-500/30 scrollbar-track-transparent">
-                                        {/* Background Glow */}
-                                        <div className="absolute top-0 right-0 w-64 h-64 bg-emerald-500/10 rounded-full blur-[100px] pointer-events-none -mr-32 -mt-32"></div>
-
-                                        {plagiarismScore !== null ? (
-                                            <>
-                                                {/* Score Header */}
-                                                <div className="text-center mb-3 relative z-10 flex-shrink-0">
-                                                    <div className="inline-flex flex-col items-center">
-                                                        <div className="flex items-center space-x-2 mb-1">
-                                                            <i className="fas fa-chart-line text-gray-400 text-[10px]"></i>
-                                                            <span className="text-[9px] uppercase tracking-[0.2em] text-gray-400 font-semibold">Similarity Score</span>
-                                                        </div>
-                                                        <div className={`text-4xl font-extrabold bg-clip-text text-transparent bg-gradient-to-br drop-shadow-lg ${
-                                                            plagiarismScore >= 80 
-                                                                ? 'from-green-400 via-emerald-500 to-emerald-600' 
-                                                                : plagiarismScore >= 40 
-                                                                    ? 'from-yellow-400 via-orange-500 to-orange-600' 
-                                                                    : 'from-red-400 via-rose-500 to-rose-600'
-                                                        }`}>
-                                                            {plagiarismScore}%
-                                                        </div>
-                                                        <div className={`mt-1 px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider ${
-                                                            plagiarismScore >= 80 
-                                                                ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' 
-                                                                : plagiarismScore >= 40 
-                                                                    ? 'bg-orange-500/20 text-orange-400 border border-orange-500/30' 
-                                                                    : 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
-                                                        }`}>
-                                                            {plagiarismScore >= 80 ? 'High Originality' : plagiarismScore >= 40 ? 'Moderate' : 'Low Originality'}
-                                                        </div>
-                                                    </div>
-                                                </div>
-
-                                                {/* Progress bar */}
-                                                <div className="w-full h-2 bg-white/5 rounded-full mb-3 overflow-hidden border border-white/10 flex-shrink-0">
-                                                    <div
-                                                        className={`h-full rounded-full transition-all duration-1000 ease-out relative shadow-lg ${
-                                                            plagiarismScore >= 80 
-                                                                ? 'bg-gradient-to-r from-emerald-500 to-green-500' 
-                                                                : plagiarismScore >= 40 
-                                                                    ? 'bg-gradient-to-r from-orange-500 to-yellow-500' 
-                                                                    : 'bg-gradient-to-r from-rose-500 to-red-500'
-                                                        }`}
-                                                        style={{ width: `${plagiarismScore}%` }}
-                                                    ></div>
-                                                </div>
-
-                                                {/* AI Insight */}
-                                                <div className="bg-gradient-to-br from-white/10 to-white/5 rounded-lg p-3 mb-3 border border-white/10 flex-shrink-0">
-                                                    <div className="flex items-start space-x-2">
-                                                        <i className="fas fa-robot text-purple-400 text-xs mt-0.5"></i>
-                                                        <p className="text-xs text-gray-200 italic leading-relaxed">
-                                                            "{plagiarismDetails?.interpretation}"
-                                                        </p>
-                                                    </div>
-                                                </div>
-
-                                                {/* Metrics Grid */}
-                                                <div className="grid grid-cols-4 gap-2 mb-3 flex-shrink-0">
-                                                    {[
-                                                        { l: 'Accuracy', v: plagiarismDetails?.details?.scores?.accuracy || plagiarismDetails?.breakdown?.semanticSimilarity, c: 'text-purple-400', bg: 'from-purple-500/20 to-purple-600/20', border: 'border-purple-500/30', i: 'fa-bullseye' },
-                                                        { l: 'Complete', v: plagiarismDetails?.details?.scores?.completeness || plagiarismDetails?.breakdown?.keywordMatch, c: 'text-blue-400', bg: 'from-blue-500/20 to-blue-600/20', border: 'border-blue-500/30', i: 'fa-check-double' },
-                                                        { l: 'Understand', v: plagiarismDetails?.details?.scores?.understanding || plagiarismDetails?.breakdown?.conceptCoverage, c: 'text-emerald-400', bg: 'from-emerald-500/20 to-emerald-600/20', border: 'border-emerald-500/30', i: 'fa-brain' },
-                                                        { l: 'Clarity', v: plagiarismDetails?.details?.scores?.clarity || 0, c: 'text-amber-400', bg: 'from-amber-500/20 to-amber-600/20', border: 'border-amber-500/30', i: 'fa-star' }
-                                                    ].map((stat, i) => (
-                                                        (() => {
-                                                            const safeValue = Number.isFinite(stat.v) ? stat.v : 0;
-                                                            return (
-                                                        <div key={i} className={`bg-gradient-to-br ${stat.bg} rounded-lg p-2 text-center border ${stat.border} transition-all duration-300`}>
-                                                            <div className={`text-sm font-bold ${stat.c}`}>{Math.round(safeValue)}%</div>
-                                                            <div className="text-[8px] text-gray-400 uppercase tracking-wider">{stat.l}</div>
-                                                        </div>
-                                                            );
-                                                        })()
-                                                    ))}
-                                                </div>
-
-                                                {/* AI Feedback */}
-                                                {plagiarismDetails?.details?.feedback && (
-                                                    <div className="bg-black/30 rounded-lg p-3 mb-3 border border-white/10 flex-shrink-0">
-                                                        <div className="flex items-center space-x-2 mb-1">
-                                                            <i className="fas fa-comment-dots text-blue-400 text-[10px]"></i>
-                                                            <span className="text-[9px] uppercase tracking-widest text-gray-400 font-semibold">AI Feedback</span>
-                                                        </div>
-                                                        <p className="text-[10px] text-gray-300 leading-relaxed line-clamp-3">{plagiarismDetails.details.feedback}</p>
-                                                    </div>
-                                                )}
-
-                                                {/* Strengths & Weaknesses */}
-                                                {(plagiarismDetails?.details?.strengths?.length > 0 || plagiarismDetails?.details?.weaknesses?.length > 0) && (
-                                                    <div className="grid grid-cols-2 gap-2 mb-3 flex-shrink-0">
-                                                        {plagiarismDetails?.details?.strengths?.length > 0 && (
-                                                            <div className="bg-green-500/10 rounded-lg p-2 border border-green-500/30">
-                                                                <div className="flex items-center space-x-1 mb-1">
-                                                                    <i className="fas fa-check-circle text-green-400 text-[10px]"></i>
-                                                                    <span className="text-[9px] uppercase tracking-wider text-green-400 font-semibold">Strengths</span>
-                                                                </div>
-                                                                <ul className="space-y-0.5">
-                                                                    {plagiarismDetails.details.strengths.slice(0, 2).map((s, i) => (
-                                                                        <li key={i} className="text-[9px] text-gray-300 leading-relaxed">• {s}</li>
-                                                                    ))}
-                                                                </ul>
-                                                            </div>
-                                                        )}
-                                                        {plagiarismDetails?.details?.weaknesses?.length > 0 && (
-                                                            <div className="bg-orange-500/10 rounded-lg p-2 border border-orange-500/30">
-                                                                <div className="flex items-center space-x-1 mb-1">
-                                                                    <i className="fas fa-exclamation-circle text-orange-400 text-[10px]"></i>
-                                                                    <span className="text-[9px] uppercase tracking-wider text-orange-400 font-semibold">Improve</span>
-                                                                </div>
-                                                                <ul className="space-y-0.5">
-                                                                    {plagiarismDetails.details.weaknesses.slice(0, 2).map((w, i) => (
-                                                                        <li key={i} className="text-[9px] text-gray-300 leading-relaxed">• {w}</li>
-                                                                    ))}
-                                                                </ul>
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                )}
-
-                                                {/* Keyword Cloud */}
-                                                <div className="flex-shrink-0 flex flex-col relative z-10 min-h-0">
-                                                    <div className="flex items-center space-x-2 mb-2 flex-shrink-0">
-                                                        <i className="fas fa-tags text-gray-400 text-[10px]"></i>
-                                                        <span className="text-[9px] uppercase tracking-widest text-gray-400 font-semibold">Matched Concepts</span>
-                                                    </div>
-                                                    <div className="flex flex-wrap gap-1.5 pb-1">
-                                                        {plagiarismDetails?.details?.matchedKeywords?.map((k, i) => (
-                                                            <span key={i} className="text-[9px] px-2 py-0.5 bg-gradient-to-r from-emerald-500/20 to-teal-500/20 text-emerald-300 rounded-md border border-emerald-500/30 font-semibold">
-                                                                #{k}
-                                                            </span>
-                                                        ))}
-                                                    </div>
-                                                </div>
-                                            </>
-                                        ) : (
-                                            <div className="h-full flex flex-col items-center justify-center text-center relative z-10">
-                                                <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-blue-500/20 to-indigo-500/20 border border-blue-500/30 flex items-center justify-center mb-5 animate-pulse shadow-lg shadow-blue-900/20">
-                                                    <i className="fas fa-waveform text-3xl text-blue-400"></i>
-                                                </div>
-                                                <h4 className="text-base font-bold text-gray-300 mb-2">Analysis Pending</h4>
-                                                <p className="text-sm text-gray-500">Processing answer data...</p>
-                                                <div className="mt-4 flex space-x-1">
-                                                    <div className="w-2 h-2 bg-blue-400 rounded-full animate-bounce" style={{ animationDelay: '0s' }}></div>
-                                                    <div className="w-2 h-2 bg-blue-400 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
-                                                    <div className="w-2 h-2 bg-blue-400 rounded-full animate-bounce" style={{ animationDelay: '0.4s' }}></div>
-                                                </div>
-                                            </div>
-                                        )}
-                                    </div>
-                                </div>
-                            )}
+                        {/* BOTTOM: Analysis results removed for sidebar layout */}
                     </div>
                 </div>
             </div>
