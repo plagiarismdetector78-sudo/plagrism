@@ -90,6 +90,12 @@ export default function MeetingPage() {
   const [isVideoHidden, setIsVideoHidden] = useState(false);
   const [scheduledInterview, setScheduledInterview] = useState(null);
   const [candidateInfo, setCandidateInfo] = useState(null);
+
+  // Tab switch detection (candidate integrity monitoring)
+  const [tabSwitchCount, setTabSwitchCount] = useState(0);
+  const [showTabWarning, setShowTabWarning] = useState(false);
+  const [lastTabSwitchTime, setLastTabSwitchTime] = useState(null);
+  const tabSwitchCountRef = useRef(0);
   const lockedCategory = (() => {
     const pos = String(scheduledInterview?.position || "").trim();
     if (!pos || pos === "Not Provided") return null;
@@ -572,6 +578,39 @@ useEffect(() => {
     };
   }, [isMobile]);
 
+  // ── Tab switch detection (candidate integrity monitoring) ──
+  useEffect(() => {
+    // Only monitor the candidate — interviewer doesn't need this
+    if (userRole !== 'candidate') return;
+
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        // Tab was switched away
+        tabSwitchCountRef.current += 1;
+        const count = tabSwitchCountRef.current;
+        const now = new Date().toLocaleTimeString();
+
+        setTabSwitchCount(count);
+        setLastTabSwitchTime(now);
+        setShowTabWarning(true);
+
+        // Notify interviewer via socket
+        if (socket && roomId) {
+          socket.emit('tab-switch-detected', {
+            roomId,
+            count,
+            timestamp: Date.now(),
+          });
+        }
+
+        console.warn(`⚠️ Tab switch #${count} detected at ${now}`);
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, [userRole, roomId]);
+
 
 
 useEffect(() => {
@@ -993,6 +1032,18 @@ socket.on("ready-to-call", async () => {
         setPlagiarismDetails({ interpretation });
       }
     });
+
+    // Interviewer receives tab-switch alerts from candidate
+    socket.on("tab-switch-detected", ({ count, timestamp }) => {
+      if (userRole === 'interviewer') {
+        const time = new Date(timestamp).toLocaleTimeString();
+        setTabSwitchCount(count);
+        setLastTabSwitchTime(time);
+        setShowTabWarning(true);
+        console.warn(`⚠️ Candidate tab switch #${count} at ${time}`);
+      }
+    });
+
     socket.on("transcript-update", ({ transcript: newText, timestamp, questionId, questionText }) => {
       logInterviewQA("transcript-update:raw_payload", {
         role: userRole,
@@ -1224,6 +1275,7 @@ socket.on("ready-to-call", async () => {
     socket.off("question-asked");
     socket.off("answer-submitted");
     socket.off("plagiarism-result");
+    socket.off("tab-switch-detected");
     socket.off("transcript-update");
     socket.off("force-transcription-flush");
     socket.off("transcription-flush-ack");
@@ -3146,6 +3198,62 @@ useEffect(() => {
           Tap to show controls
         </div>
       )}
+
+      {/* ── Tab Switch Warning Popup ── */}
+      {showTabWarning && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
+          {/* Backdrop */}
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+
+          <div className="relative bg-gray-900 border-2 border-red-500/60 rounded-2xl shadow-2xl w-full max-w-md p-6 animate-in zoom-in-95 duration-200">
+            {/* Red pulsing icon */}
+            <div className="flex items-center justify-center mb-4">
+              <div className="relative">
+                <div className="absolute inset-0 bg-red-500/30 rounded-full blur-xl animate-pulse"></div>
+                <div className="relative w-16 h-16 bg-red-500/20 border-2 border-red-500/50 rounded-full flex items-center justify-center">
+                  <i className="fas fa-exclamation-triangle text-red-400 text-2xl"></i>
+                </div>
+              </div>
+            </div>
+
+            {/* Title */}
+            <h2 className="text-xl font-bold text-white text-center mb-2">
+              {userRole === 'candidate' ? '⚠️ Tab Switch Detected' : '⚠️ Candidate Left Tab'}
+            </h2>
+
+            {/* Message */}
+            <p className="text-gray-300 text-sm text-center mb-4 leading-relaxed">
+              {userRole === 'candidate'
+                ? 'You switched away from this interview tab. This action has been recorded and reported to the interviewer.'
+                : `The candidate has switched tabs during the interview. This may indicate suspicious activity.`}
+            </p>
+
+            {/* Count badge */}
+            <div className="flex items-center justify-center mb-5">
+              <div className="bg-red-500/20 border border-red-500/40 rounded-xl px-4 py-2 flex items-center space-x-3">
+                <i className="fas fa-flag text-red-400"></i>
+                <span className="text-white font-semibold text-sm">
+                  Total tab switches: <span className="text-red-400 font-bold text-lg">{tabSwitchCount}</span>
+                </span>
+              </div>
+            </div>
+
+            {lastTabSwitchTime && (
+              <p className="text-gray-500 text-xs text-center mb-5">
+                Last detected at {lastTabSwitchTime}
+              </p>
+            )}
+
+            {/* Dismiss button */}
+            <button
+              onClick={() => setShowTabWarning(false)}
+              className="w-full py-3 bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 text-white font-semibold rounded-xl transition-all hover:scale-105"
+            >
+              {userRole === 'candidate' ? 'I Understand — Return to Interview' : 'Dismiss'}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
-} 
+}
