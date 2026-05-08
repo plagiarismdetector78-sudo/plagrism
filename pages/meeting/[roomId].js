@@ -3317,8 +3317,8 @@ useEffect(() => {
         </div>
       )}
 
-      {/* ── Tab Switch Warning Popup — INTERVIEWER ONLY ── */}
-      {showTabWarning && userRole === 'interviewer' && (
+      {/* ── Tab Switch Warning Popup — shown on BOTH candidate and interviewer ── */}
+      {showTabWarning && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
           {/* Backdrop */}
           <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
