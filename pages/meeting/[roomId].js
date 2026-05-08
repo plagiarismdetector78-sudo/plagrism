@@ -2890,6 +2890,124 @@ useEffect(() => {
           )}
         </div>
 
+        {/* Right Sidebar - Candidate: Current Question + Tab Alert */}
+        {userRole === 'candidate' && (
+          <div className="w-80 bg-gray-900/95 backdrop-blur-xl border-l border-white/10 flex flex-col shadow-2xl hidden lg:flex overflow-hidden">
+
+            {/* Header */}
+            <div className="bg-gradient-to-r from-purple-900/50 to-indigo-900/50 px-4 py-3 border-b border-white/10 flex-shrink-0">
+              <div className="flex items-center space-x-2">
+                <i className="fas fa-question-circle text-purple-400"></i>
+                <h3 className="text-white font-bold">Interview</h3>
+                {questions.length > 0 && (
+                  <span className="ml-auto text-xs text-gray-400 bg-white/10 px-2 py-0.5 rounded-full">
+                    {currentQuestionIndex + 1} / {questions.length}
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {/* Tab switch alert strip — shown when candidate switches tabs */}
+            {tabSwitchCount > 0 && (
+              <div className="bg-red-900/40 border-b border-red-500/40 px-4 py-2.5 flex-shrink-0">
+                <div className="flex items-center space-x-2">
+                  <i className="fas fa-exclamation-triangle text-red-400 text-sm"></i>
+                  <span className="text-red-300 text-xs font-semibold">
+                    Tab switch detected — {tabSwitchCount} time{tabSwitchCount > 1 ? 's' : ''}. Interviewer has been notified.
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {/* Scrollable content */}
+            <div className="flex-1 overflow-y-auto scrollbar-thin scrollbar-thumb-purple-500/40 scrollbar-track-transparent p-4 space-y-4">
+
+              {/* Current Question */}
+              {currentQuestion ? (
+                <div className="bg-white/5 border border-white/10 rounded-2xl p-4 hover:border-purple-500/30 transition-all">
+                  <div className="flex items-center space-x-2 mb-3">
+                    <div className="w-6 h-6 bg-purple-500/20 rounded-lg flex items-center justify-center flex-shrink-0">
+                      <i className="fas fa-question text-purple-400 text-xs"></i>
+                    </div>
+                    <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Current Question</span>
+                  </div>
+                  <p className="text-white text-sm font-semibold leading-relaxed">
+                    {currentQuestion.questiontext || currentQuestion.question}
+                  </p>
+                </div>
+              ) : (
+                <div className="flex flex-col items-center justify-center py-12 text-center">
+                  <div className="w-14 h-14 bg-white/5 rounded-2xl flex items-center justify-center mb-3 border border-white/10">
+                    <i className="fas fa-hourglass-half text-gray-500 text-xl"></i>
+                  </div>
+                  <p className="text-gray-400 font-medium text-sm">Waiting for question</p>
+                  <p className="text-gray-600 text-xs mt-1">The interviewer will start shortly</p>
+                </div>
+              )}
+
+              {/* Typed Answer box */}
+              {currentQuestion && (
+                <div className="bg-white/5 border border-white/10 rounded-2xl p-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center space-x-2">
+                      <i className="fas fa-keyboard text-purple-300 text-xs"></i>
+                      <span className="text-[10px] uppercase tracking-widest text-gray-400 font-semibold">Typed Answer</span>
+                    </div>
+                    <span className="text-[10px] text-gray-500">{String(currentQuestionTyped || '').length} chars</span>
+                  </div>
+                  <textarea
+                    value={currentQuestionTyped || ''}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      const qid = getQuestionId(currentQuestion);
+                      setCurrentQuestionTyped(value);
+                      if (qid) {
+                        ensureTypedMeta(qid);
+                        setTypedForQuestion(qid, value);
+                        recordTypingEvent(qid, { type: 'keystroke' });
+                      }
+                      if (socket && roomId && qid) {
+                        if (typedEmitTimerRef.current) clearTimeout(typedEmitTimerRef.current);
+                        typedEmitTimerRef.current = setTimeout(() => {
+                          try {
+                            const metaNow = questionTypedMetaMapRef.current[String(qid)] || null;
+                            socket.emit('typed-answer-update', {
+                              roomId, questionId: qid,
+                              typedAnswer: String(value || ''),
+                              meta: metaNow, timestamp: Date.now(),
+                            });
+                          } catch { /* ignore */ }
+                        }, 250);
+                      }
+                    }}
+                    onPaste={(e) => {
+                      const text = e.clipboardData?.getData('text') || '';
+                      const qid = getQuestionId(currentQuestion);
+                      if (qid) recordTypingEvent(qid, { type: 'paste', insertedTextLength: text.length });
+                    }}
+                    placeholder="Type your answer here..."
+                    rows={5}
+                    className="w-full px-3 py-2.5 bg-black/40 border border-white/10 rounded-xl text-white text-sm placeholder-gray-500 focus:ring-2 focus:ring-purple-500 focus:border-transparent resize-none"
+                  />
+                </div>
+              )}
+
+              {/* Recording status */}
+              <div className={`rounded-xl px-4 py-3 border flex items-center space-x-3 ${
+                transcriptionEnabled
+                  ? 'bg-red-500/10 border-red-500/30'
+                  : 'bg-white/5 border-white/10'
+              }`}>
+                <div className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${transcriptionEnabled ? 'bg-red-500 animate-pulse' : 'bg-gray-600'}`}></div>
+                <span className="text-xs text-gray-300 font-medium">
+                  {transcriptionEnabled ? 'Recording your voice...' : 'Voice recording off — press the record button to start'}
+                </span>
+              </div>
+
+            </div>
+          </div>
+        )}
+
         {/* Right Sidebar - Interviewer Only: Transcript + Question Panel */}
         {userRole === 'interviewer' && showTranscript && (
           <div className="w-96 bg-gray-900/95 backdrop-blur-xl border-l border-white/10 flex flex-col shadow-2xl animate-in slide-in-from-right duration-300 hidden lg:flex"
@@ -3199,8 +3317,8 @@ useEffect(() => {
         </div>
       )}
 
-      {/* ── Tab Switch Warning Popup ── */}
-      {showTabWarning && (
+      {/* ── Tab Switch Warning Popup — INTERVIEWER ONLY ── */}
+      {showTabWarning && userRole === 'interviewer' && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
           {/* Backdrop */}
           <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
