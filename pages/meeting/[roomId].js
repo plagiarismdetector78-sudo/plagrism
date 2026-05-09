@@ -91,10 +91,12 @@ export default function MeetingPage() {
   const [scheduledInterview, setScheduledInterview] = useState(null);
   const [candidateInfo, setCandidateInfo] = useState(null);
 
-  // Tab switch detection (candidate integrity monitoring)
+  // Tab switch detection (candidate only — interviewer is notified via signaling server)
   const [tabSwitchCount, setTabSwitchCount] = useState(0);
   const [showTabWarning, setShowTabWarning] = useState(false);
   const [lastTabSwitchTime, setLastTabSwitchTime] = useState(null);
+  /** self = candidate hid tab on this device; remote = interviewer received candidate tab event */
+  const [tabSwitchWarningKind, setTabSwitchWarningKind] = useState(null);
   const tabSwitchCountRef = useRef(0);
   const lockedCategory = (() => {
     const pos = String(scheduledInterview?.position || "").trim();
@@ -578,32 +580,32 @@ useEffect(() => {
     };
   }, [isMobile]);
 
-  // ── Tab switch detection (candidate integrity monitoring) ──
+  // ── Tab switch detection (candidate only) ──
   useEffect(() => {
-    // Only monitor the candidate — interviewer doesn't need this
     if (userRole !== 'candidate') return;
+    if (!roomId) return;
 
     const handleVisibilityChange = () => {
       if (document.hidden) {
-        // Tab was switched away
         tabSwitchCountRef.current += 1;
         const count = tabSwitchCountRef.current;
         const now = new Date().toLocaleTimeString();
 
         setTabSwitchCount(count);
         setLastTabSwitchTime(now);
+        setTabSwitchWarningKind('self');
         setShowTabWarning(true);
 
-        // Notify interviewer via socket
         if (socket && roomId) {
           socket.emit('tab-switch-detected', {
             roomId,
+            role: 'candidate',
             count,
             timestamp: Date.now(),
           });
         }
 
-        console.warn(`⚠️ Tab switch #${count} detected at ${now}`);
+        console.warn(`⚠️ Candidate tab switch #${count} at ${now}`);
       }
     };
 
@@ -1033,15 +1035,17 @@ socket.on("ready-to-call", async () => {
       }
     });
 
-    // Interviewer receives tab-switch alerts from candidate
-    socket.on("tab-switch-detected", ({ count, timestamp }) => {
-      if (userRole === 'interviewer') {
-        const time = new Date(timestamp).toLocaleTimeString();
-        setTabSwitchCount(count);
-        setLastTabSwitchTime(time);
-        setShowTabWarning(true);
-        console.warn(`⚠️ Candidate tab switch #${count} at ${time}`);
-      }
+    socket.on("tab-switch-detected", ({ count, timestamp, role }) => {
+      if (role !== 'candidate') return;
+      if (userRole !== 'interviewer') return;
+
+      const time = timestamp ? new Date(timestamp).toLocaleTimeString() : new Date().toLocaleTimeString();
+      tabSwitchCountRef.current = Math.max(tabSwitchCountRef.current, count || 0);
+      setTabSwitchCount(tabSwitchCountRef.current);
+      setLastTabSwitchTime(time);
+      setTabSwitchWarningKind('remote');
+      setShowTabWarning(true);
+      console.warn(`⚠️ Candidate tab switch (notify interviewer) #${count} at ${time}`);
     });
 
     socket.on("transcript-update", ({ transcript: newText, timestamp, questionId, questionText }) => {
@@ -2770,6 +2774,21 @@ useEffect(() => {
             </div>
           </div>
         </div>
+        {tabSwitchCount > 0 && (
+          <div className="px-6 pb-3">
+            <div className="bg-red-900/35 border border-red-500/40 rounded-xl px-4 py-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
+              <span className="text-red-200 font-semibold flex items-center gap-2">
+                <i className="fas fa-exclamation-triangle text-red-400" />
+                {userRole === 'candidate'
+                  ? 'Your tab switches recorded'
+                  : 'Candidate tab switches recorded'}
+              </span>
+              <span className="text-gray-200">
+                Count: <strong className="text-white">{tabSwitchCount}</strong>
+              </span>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Main Video Area - Optimized Layout */}
@@ -2907,13 +2926,15 @@ useEffect(() => {
               </div>
             </div>
 
-            {/* Tab switch alert strip — shown when candidate switches tabs */}
             {tabSwitchCount > 0 && (
               <div className="bg-red-900/40 border-b border-red-500/40 px-4 py-2.5 flex-shrink-0">
-                <div className="flex items-center space-x-2">
-                  <i className="fas fa-exclamation-triangle text-red-400 text-sm"></i>
-                  <span className="text-red-300 text-xs font-semibold">
-                    Tab switch detected — {tabSwitchCount} time{tabSwitchCount > 1 ? 's' : ''}. Interviewer has been notified.
+                <div className="flex flex-col space-y-1">
+                  <div className="flex items-center space-x-2">
+                    <i className="fas fa-exclamation-triangle text-red-400 text-sm"></i>
+                    <span className="text-red-300 text-xs font-semibold">Tab switch recorded</span>
+                  </div>
+                  <span className="text-red-200/90 text-[11px] pl-6">
+                    {tabSwitchCount} time{tabSwitchCount > 1 ? 's' : ''}. Interviewer has been notified.
                   </span>
                 </div>
               </div>
@@ -3317,7 +3338,7 @@ useEffect(() => {
         </div>
       )}
 
-      {/* ── Tab Switch Warning Popup — shown on BOTH candidate and interviewer ── */}
+      {/* Tab switch warning: candidate (self) + interviewer (when candidate switches) */}
       {showTabWarning && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
           {/* Backdrop */}
@@ -3336,14 +3357,16 @@ useEffect(() => {
 
             {/* Title */}
             <h2 className="text-xl font-bold text-white text-center mb-2">
-              {userRole === 'candidate' ? '⚠️ Tab Switch Detected' : '⚠️ Candidate Left Tab'}
+              {tabSwitchWarningKind === 'self'
+                ? '⚠️ Tab Switch Detected'
+                : '⚠️ Candidate Left Tab'}
             </h2>
 
             {/* Message */}
             <p className="text-gray-300 text-sm text-center mb-4 leading-relaxed">
-              {userRole === 'candidate'
-                ? 'You switched away from this interview tab. This action has been recorded and reported to the interviewer.'
-                : `The candidate has switched tabs during the interview. This may indicate suspicious activity.`}
+              {tabSwitchWarningKind === 'self'
+                ? 'You switched away from this interview tab. This action has been recorded and shared with the interviewer.'
+                : 'The candidate switched away from the interview tab. This event has been recorded.'}
             </p>
 
             {/* Count badge */}
@@ -3351,7 +3374,8 @@ useEffect(() => {
               <div className="bg-red-500/20 border border-red-500/40 rounded-xl px-4 py-2 flex items-center space-x-3">
                 <i className="fas fa-flag text-red-400"></i>
                 <span className="text-white font-semibold text-sm">
-                  Total tab switches: <span className="text-red-400 font-bold text-lg">{tabSwitchCount}</span>
+                  Candidate tab switches:{' '}
+                  <span className="text-red-400 font-bold text-lg">{tabSwitchCount}</span>
                 </span>
               </div>
             </div>
@@ -3367,7 +3391,7 @@ useEffect(() => {
               onClick={() => setShowTabWarning(false)}
               className="w-full py-3 bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 text-white font-semibold rounded-xl transition-all hover:scale-105"
             >
-              {userRole === 'candidate' ? 'I Understand — Return to Interview' : 'Dismiss'}
+              {tabSwitchWarningKind === 'self' ? 'I Understand — Return to Interview' : 'Dismiss'}
             </button>
           </div>
         </div>
