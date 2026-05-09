@@ -95,8 +95,6 @@ export default function MeetingPage() {
   const [tabSwitchCount, setTabSwitchCount] = useState(0);
   const [showTabWarning, setShowTabWarning] = useState(false);
   const [lastTabSwitchTime, setLastTabSwitchTime] = useState(null);
-  /** self = candidate hid tab on this device; remote = interviewer received candidate tab event */
-  const [tabSwitchWarningKind, setTabSwitchWarningKind] = useState(null);
   const tabSwitchCountRef = useRef(0);
   const lockedCategory = (() => {
     const pos = String(scheduledInterview?.position || "").trim();
@@ -593,7 +591,6 @@ useEffect(() => {
 
         setTabSwitchCount(count);
         setLastTabSwitchTime(now);
-        setTabSwitchWarningKind('self');
         setShowTabWarning(true);
 
         if (socket && roomId) {
@@ -1043,9 +1040,8 @@ socket.on("ready-to-call", async () => {
       tabSwitchCountRef.current = Math.max(tabSwitchCountRef.current, count || 0);
       setTabSwitchCount(tabSwitchCountRef.current);
       setLastTabSwitchTime(time);
-      setTabSwitchWarningKind('remote');
-      setShowTabWarning(true);
-      console.warn(`⚠️ Candidate tab switch (notify interviewer) #${count} at ${time}`);
+      // Interviewer: inline sidebar alert only (no modal)
+      console.warn(`⚠️ Candidate tab switch (sidebar alert) #${count} at ${time}`);
     });
 
     socket.on("transcript-update", ({ transcript: newText, timestamp, questionId, questionText }) => {
@@ -2774,14 +2770,12 @@ useEffect(() => {
             </div>
           </div>
         </div>
-        {tabSwitchCount > 0 && (
+        {tabSwitchCount > 0 && userRole === 'candidate' && (
           <div className="px-6 pb-3">
             <div className="bg-red-900/35 border border-red-500/40 rounded-xl px-4 py-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
               <span className="text-red-200 font-semibold flex items-center gap-2">
                 <i className="fas fa-exclamation-triangle text-red-400" />
-                {userRole === 'candidate'
-                  ? 'Your tab switches recorded'
-                  : 'Candidate tab switches recorded'}
+                Your tab switches recorded
               </span>
               <span className="text-gray-200">
                 Count: <strong className="text-white">{tabSwitchCount}</strong>
@@ -3031,12 +3025,33 @@ useEffect(() => {
 
         {/* Right Sidebar - Interviewer Only: Transcript + Question Panel */}
         {userRole === 'interviewer' && showTranscript && (
-          <div className="w-96 bg-gray-900/95 backdrop-blur-xl border-l border-white/10 flex flex-col shadow-2xl animate-in slide-in-from-right duration-300 hidden lg:flex"
-               style={{ height: '100%', overflow: 'hidden' }}>
+          <div className="w-96 bg-gray-900/95 backdrop-blur-xl border-l border-white/10 flex flex-col shadow-2xl animate-in slide-in-from-right duration-300 hidden lg:flex overflow-hidden"
+               style={{ height: '100%' }}>
 
-            {/* Single scrollable column — everything scrolls together */}
-            <div className="flex-1 overflow-y-auto scrollbar-thin scrollbar-thumb-purple-500/40 scrollbar-track-transparent"
-                 style={{ minHeight: 0 }}>
+            {/* Same pattern as candidate sidebar: panel title + inline tab alert (no popup) */}
+            <div className="bg-gradient-to-r from-purple-900/50 to-indigo-900/50 px-4 py-3 border-b border-white/10 flex-shrink-0">
+              <div className="flex items-center space-x-2">
+                <i className="fas fa-user-graduate text-purple-400"></i>
+                <h3 className="text-white font-bold">Candidate</h3>
+              </div>
+            </div>
+
+            {tabSwitchCount > 0 && (
+              <div className="bg-red-900/40 border-b border-red-500/40 px-4 py-2.5 flex-shrink-0">
+                <div className="flex flex-col space-y-1">
+                  <div className="flex items-center space-x-2">
+                    <i className="fas fa-exclamation-triangle text-red-400 text-sm"></i>
+                    <span className="text-red-300 text-xs font-semibold">Tab switch recorded</span>
+                  </div>
+                  <span className="text-red-200/90 text-[11px] pl-6">
+                    Candidate switched away — {tabSwitchCount} time{tabSwitchCount > 1 ? 's' : ''}. Activity logged.
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {/* Scrollable column — transcript + interview panel */}
+            <div className="flex-1 overflow-y-auto scrollbar-thin scrollbar-thumb-purple-500/40 scrollbar-track-transparent min-h-0">
 
             {/* ── TRANSCRIPT SECTION ── */}
             <div className="flex flex-col border-b border-white/10">
@@ -3338,8 +3353,8 @@ useEffect(() => {
         </div>
       )}
 
-      {/* Tab switch warning: candidate (self) + interviewer (when candidate switches) */}
-      {showTabWarning && (
+      {/* Tab switch modal — candidate only (interviewer uses sidebar strip) */}
+      {showTabWarning && userRole === 'candidate' && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
           {/* Backdrop */}
           <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
@@ -3357,16 +3372,12 @@ useEffect(() => {
 
             {/* Title */}
             <h2 className="text-xl font-bold text-white text-center mb-2">
-              {tabSwitchWarningKind === 'self'
-                ? '⚠️ Tab Switch Detected'
-                : '⚠️ Candidate Left Tab'}
+              ⚠️ Tab Switch Detected
             </h2>
 
             {/* Message */}
             <p className="text-gray-300 text-sm text-center mb-4 leading-relaxed">
-              {tabSwitchWarningKind === 'self'
-                ? 'You switched away from this interview tab. This action has been recorded and shared with the interviewer.'
-                : 'The candidate switched away from the interview tab. This event has been recorded.'}
+              You switched away from this interview tab. This action has been recorded and shared with the interviewer.
             </p>
 
             {/* Count badge */}
@@ -3374,7 +3385,7 @@ useEffect(() => {
               <div className="bg-red-500/20 border border-red-500/40 rounded-xl px-4 py-2 flex items-center space-x-3">
                 <i className="fas fa-flag text-red-400"></i>
                 <span className="text-white font-semibold text-sm">
-                  Candidate tab switches:{' '}
+                  Your tab switches:{' '}
                   <span className="text-red-400 font-bold text-lg">{tabSwitchCount}</span>
                 </span>
               </div>
@@ -3391,7 +3402,7 @@ useEffect(() => {
               onClick={() => setShowTabWarning(false)}
               className="w-full py-3 bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 text-white font-semibold rounded-xl transition-all hover:scale-105"
             >
-              {tabSwitchWarningKind === 'self' ? 'I Understand — Return to Interview' : 'Dismiss'}
+              I Understand — Return to Interview
             </button>
           </div>
         </div>
