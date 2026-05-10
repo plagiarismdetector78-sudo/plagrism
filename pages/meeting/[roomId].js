@@ -2920,20 +2920,6 @@ useEffect(() => {
               </div>
             </div>
 
-            {tabSwitchCount > 0 && (
-              <div className="bg-red-900/40 border-b border-red-500/40 px-4 py-2.5 flex-shrink-0">
-                <div className="flex flex-col space-y-1">
-                  <div className="flex items-center space-x-2">
-                    <i className="fas fa-exclamation-triangle text-red-400 text-sm"></i>
-                    <span className="text-red-300 text-xs font-semibold">Tab switch recorded</span>
-                  </div>
-                  <span className="text-red-200/90 text-[11px] pl-6">
-                    {tabSwitchCount} time{tabSwitchCount > 1 ? 's' : ''}. Interviewer has been notified.
-                  </span>
-                </div>
-              </div>
-            )}
-
             {/* Scrollable content */}
             <div className="flex-1 overflow-y-auto scrollbar-thin scrollbar-thumb-purple-500/40 scrollbar-track-transparent p-4 space-y-4">
 
@@ -3354,8 +3340,8 @@ useEffect(() => {
         </div>
       )}
 
-      {/* ── Tab Switch Warning Popup — shown on BOTH candidate and interviewer ── */}
-      {showTabWarning && (
+      {/* ── Tab Switch Warning Popup — INTERVIEWER ONLY (silent on candidate side) ── */}
+      {showTabWarning && userRole === 'interviewer' && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
           <div className="relative bg-gray-900 border-2 border-red-500/60 rounded-2xl shadow-2xl w-full max-w-md p-6 animate-in zoom-in-95 duration-200">
@@ -3369,13 +3355,11 @@ useEffect(() => {
             </div>
 
             <h2 className="text-xl font-bold text-white text-center mb-2">
-              {userRole === 'candidate' ? '⚠️ Tab Switch Detected' : '⚠️ Candidate Left Tab'}
+              ⚠️ Candidate Left Tab
             </h2>
 
             <p className="text-gray-300 text-sm text-center mb-4 leading-relaxed">
-              {userRole === 'candidate'
-                ? 'You switched away from this interview tab. This action has been recorded and reported to the interviewer.'
-                : 'The candidate has switched away from the interview tab. This may indicate suspicious activity.'}
+              The candidate has switched away from the interview tab. This may indicate suspicious activity.
             </p>
 
             <div className="flex items-center justify-center mb-5">
@@ -3397,7 +3381,7 @@ useEffect(() => {
               onClick={() => setShowTabWarning(false)}
               className="w-full py-3 bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 text-white font-semibold rounded-xl transition-all hover:scale-105"
             >
-              {userRole === 'candidate' ? 'I Understand — Return to Interview' : 'Dismiss'}
+              Dismiss
             </button>
           </div>
         </div>
