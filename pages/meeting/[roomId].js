@@ -3318,7 +3318,6 @@ useEffect(() => {
                     title={signLanguageEnabled ? 'Stop Sign Language' : 'Sign Language'}
                   >
                     <i className="fas fa-hands text-white text-sm"></i>
-                    <span className="text-white text-[9px] font-medium mt-1">{signLanguageEnabled ? 'Sign Off' : 'Sign Lang'}</span>
                   </button>
 
                   {/* Generate Report */}
