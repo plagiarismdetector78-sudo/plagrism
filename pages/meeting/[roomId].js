@@ -2923,6 +2923,36 @@ useEffect(() => {
             {/* Scrollable content */}
             <div className="flex-1 overflow-y-auto scrollbar-thin scrollbar-thumb-purple-500/40 scrollbar-track-transparent p-4 space-y-4">
 
+              {/* Answer Guidelines Card — only show before interview starts */}
+              {!currentQuestion && (
+              <div className="bg-gradient-to-br from-purple-500/10 to-indigo-500/10 border border-purple-500/20 rounded-2xl p-4">
+                <div className="flex items-center space-x-2 mb-3">
+                  <div className="w-6 h-6 bg-purple-500/20 rounded-lg flex items-center justify-center flex-shrink-0">
+                    <i className="fas fa-clipboard-list text-purple-400 text-xs"></i>
+                  </div>
+                  <span className="text-[10px] font-bold text-purple-300 uppercase tracking-widest">Answer Guidelines</span>
+                </div>
+                <ul className="space-y-2">
+                  <li className="flex items-start space-x-2">
+                    <i className="fas fa-microphone text-purple-400 text-xs mt-0.5 flex-shrink-0"></i>
+                    <span className="text-gray-300 text-xs">Press <span className="text-white font-semibold">Record</span> before you start speaking</span>
+                  </li>
+                  <li className="flex items-start space-x-2">
+                    <i className="fas fa-keyboard text-purple-400 text-xs mt-0.5 flex-shrink-0"></i>
+                    <span className="text-gray-300 text-xs">Type the <span className="text-white font-semibold">same answer</span> you are speaking in the box below</span>
+                  </li>
+                  <li className="flex items-start space-x-2">
+                    <i className="fas fa-align-left text-purple-400 text-xs mt-0.5 flex-shrink-0"></i>
+                    <span className="text-gray-300 text-xs">Aim for <span className="text-white font-semibold">3–5 sentences</span> per answer</span>
+                  </li>
+                  <li className="flex items-start space-x-2">
+                    <i className="fas fa-comments text-purple-400 text-xs mt-0.5 flex-shrink-0"></i>
+                    <span className="text-gray-300 text-xs">Speak <span className="text-white font-semibold">naturally</span> and clearly into your microphone</span>
+                  </li>
+                </ul>
+              </div>
+              )}
+
               {/* Current Question */}
               {currentQuestion ? (
                 <div className="bg-white/5 border border-white/10 rounded-2xl p-4 hover:border-purple-500/30 transition-all">
