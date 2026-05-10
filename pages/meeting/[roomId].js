@@ -3231,93 +3231,115 @@ useEffect(() => {
             {/* Left: empty spacer to keep controls centered */}
             <div className="w-24"></div>
 
-            {/* Center: Main Controls */}
-            <div className="flex items-center space-x-2">
-              {/* Audio */}
+            {/* Center: Main Controls — all labeled */}
+            <div className="flex items-center space-x-1.5">
+
+              {/* Mute / Unmute */}
               <button
                 onClick={toggleAudio}
-                className={`p-2.5 rounded-lg transition-all hover:scale-105 ${isAudioMuted
-                  ? 'bg-red-500 hover:bg-red-600'
-                  : 'bg-gray-700/80 hover:bg-gray-600/80'
-                  }`}
+                className={`flex flex-col items-center px-3 py-2 rounded-xl transition-all hover:scale-105 min-w-[56px] ${
+                  isAudioMuted ? 'bg-red-500 hover:bg-red-600' : 'bg-gray-700/80 hover:bg-gray-600/80'
+                }`}
                 title={isAudioMuted ? 'Unmute' : 'Mute'}
               >
-                <i className={`fas fa-${isAudioMuted ? 'microphone-slash' : 'microphone'} text-white`}></i>
+                <i className={`fas fa-${isAudioMuted ? 'microphone-slash' : 'microphone'} text-white text-sm`}></i>
+                <span className="text-white text-[9px] font-medium mt-1">{isAudioMuted ? 'Unmute' : 'Mute'}</span>
               </button>
 
-              {/* Video */}
+              {/* Camera */}
               <button
                 onClick={toggleVideo}
-                className={`p-2.5 rounded-lg transition-all hover:scale-105 ${isVideoOff
-                  ? 'bg-red-500 hover:bg-red-600'
-                  : 'bg-gray-700/80 hover:bg-gray-600/80'
-                  }`}
+                className={`flex flex-col items-center px-3 py-2 rounded-xl transition-all hover:scale-105 min-w-[56px] ${
+                  isVideoOff ? 'bg-red-500 hover:bg-red-600' : 'bg-gray-700/80 hover:bg-gray-600/80'
+                }`}
                 title={isVideoOff ? 'Turn On Camera' : 'Turn Off Camera'}
               >
-                <i className={`fas fa-${isVideoOff ? 'video-slash' : 'video'} text-white`}></i>
+                <i className={`fas fa-${isVideoOff ? 'video-slash' : 'video'} text-white text-sm`}></i>
+                <span className="text-white text-[9px] font-medium mt-1">{isVideoOff ? 'Cam On' : 'Cam Off'}</span>
               </button>
 
-              {/* Recording (Candidate Only) */}
+              {/* Record (Candidate Only) */}
               {userRole === 'candidate' && (
                 <button
                   onClick={toggleTranscription}
-                  className={`p-2.5 rounded-lg transition-all hover:scale-105 ${transcriptionEnabled
-                    ? 'bg-red-500 hover:bg-red-600 animate-pulse'
-                    : 'bg-green-500 hover:bg-green-600'
-                    }`}
+                  className={`flex flex-col items-center px-3 py-2 rounded-xl transition-all hover:scale-105 min-w-[56px] ${
+                    transcriptionEnabled ? 'bg-red-500 hover:bg-red-600 animate-pulse' : 'bg-green-600 hover:bg-green-700'
+                  }`}
                   title={transcriptionEnabled ? 'Stop Recording' : 'Start Recording'}
                 >
-                  <i className={`fas fa-${transcriptionEnabled ? 'stop-circle' : 'circle-dot'} text-white`}></i>
+                  <i className={`fas fa-${transcriptionEnabled ? 'stop-circle' : 'circle-dot'} text-white text-sm`}></i>
+                  <span className="text-white text-[9px] font-medium mt-1">{transcriptionEnabled ? 'Stop Rec' : 'Record'}</span>
                 </button>
               )}
 
               {/* Screen Share */}
               <button
                 onClick={toggleScreenShare}
-                className={`p-2.5 rounded-lg transition-all hover:scale-105 ${
-                  isScreenSharing
-                    ? 'bg-green-500 hover:bg-green-600'
-                    : 'bg-gray-700/80 hover:bg-gray-600/80'
+                className={`flex flex-col items-center px-3 py-2 rounded-xl transition-all hover:scale-105 min-w-[56px] ${
+                  isScreenSharing ? 'bg-green-500 hover:bg-green-600' : 'bg-gray-700/80 hover:bg-gray-600/80'
                 }`}
                 title={isScreenSharing ? 'Stop Sharing' : 'Share Screen'}
               >
-                <i className={`fas fa-${isScreenSharing ? 'stop-circle' : 'desktop'} text-white`}></i>
+                <i className={`fas fa-${isScreenSharing ? 'stop-circle' : 'desktop'} text-white text-sm`}></i>
+                <span className="text-white text-[9px] font-medium mt-1">{isScreenSharing ? 'Stop Share' : 'Share'}</span>
               </button>
 
               {/* End Call */}
               <button
                 onClick={endCall}
-                className="px-4 py-2.5 rounded-lg bg-red-600 hover:bg-red-700 transition-all hover:scale-105 flex items-center space-x-2"
+                className="flex flex-col items-center px-4 py-2 rounded-xl bg-red-600 hover:bg-red-700 transition-all hover:scale-105 min-w-[64px]"
                 title="End Call"
               >
-                <i className="fas fa-phone-slash text-white"></i>
-                <span className="text-white text-xs font-bold hidden sm:inline">End</span>
+                <i className="fas fa-phone-slash text-white text-sm"></i>
+                <span className="text-white text-[9px] font-bold mt-1">End Call</span>
               </button>
 
-              {/* Transcript Toggle (Interviewer Only) */}
+              {/* Interviewer-only buttons */}
               {userRole === 'interviewer' && (
                 <>
+                  {/* Panel Toggle — opens/closes the right sidebar */}
                   <button
-                    onClick={() => setShowTranscript(!showTranscript)}
-                    className={`hidden lg:flex p-2.5 rounded-lg transition-all hover:scale-105 ${showTranscript
-                      ? 'bg-purple-600 hover:bg-purple-500'
-                      : 'bg-gray-700/80 hover:bg-gray-600/80'
-                      }`}
-                    title="Toggle Transcript"
+                    onClick={() => setShowTranscript(v => !v)}
+                    className={`flex flex-col items-center px-3 py-2 rounded-xl transition-all hover:scale-105 min-w-[56px] ${
+                      showTranscript ? 'bg-purple-600 hover:bg-purple-500' : 'bg-gray-700/80 hover:bg-gray-600/80'
+                    }`}
+                    title={showTranscript ? 'Hide Panel' : 'Show Panel'}
                   >
-                    <i className="fas fa-comment-alt text-white"></i>
+                    <i className="fas fa-columns text-white text-sm"></i>
+                    <span className="text-white text-[9px] font-medium mt-1">{showTranscript ? 'Hide Panel' : 'Show Panel'}</span>
                   </button>
 
-                  {/* Sign Language Detection Toggle */}
+                  {/* Sign Language */}
                   <button
                     onClick={toggleSignLanguage}
-                    className={`p-2.5 rounded-lg transition-all hover:scale-105 ${signLanguageEnabled
-                      ? 'bg-blue-600 hover:bg-blue-500 animate-pulse'
-                      : 'bg-gray-700/80 hover:bg-gray-600/80'
-                      }`}
-                    title={signLanguageEnabled ? 'Stop Sign Language Detection' : 'Start Sign Language Detection'}
+                    className={`flex flex-col items-center px-3 py-2 rounded-xl transition-all hover:scale-105 min-w-[56px] ${
+                      signLanguageEnabled ? 'bg-blue-600 hover:bg-blue-500 animate-pulse' : 'bg-gray-700/80 hover:bg-gray-600/80'
+                    }`}
+                    title={signLanguageEnabled ? 'Stop Sign Language' : 'Sign Language'}
                   >
-                    <i className="fas fa-hands text-white"></i>
+                    <i className="fas fa-hands text-white text-sm"></i>
+                    <span className="text-white text-[9px] font-medium mt-1">{signLanguageEnabled ? 'Sign Off' : 'Sign Lang'}</span>
+                  </button>
+
+                  {/* Generate Report */}
+                  <button
+                    onClick={checkPlagiarism}
+                    disabled={!fullTranscript || fullTranscript.trim().length === 0 || isCheckingPlagiarism}
+                    className={`flex flex-col items-center px-3 py-2 rounded-xl transition-all hover:scale-105 min-w-[56px] disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:scale-100 ${
+                      isCheckingPlagiarism
+                        ? 'bg-yellow-500 hover:bg-yellow-600 animate-pulse'
+                        : (!fullTranscript || fullTranscript.trim().length === 0)
+                          ? 'bg-gray-800'
+                          : 'bg-indigo-600 hover:bg-indigo-500'
+                    }`}
+                    title={isCheckingPlagiarism ? 'Analyzing...' : 'Generate Report'}
+                  >
+                    <i className={`fas fa-${isCheckingPlagiarism ? 'spinner fa-spin' : 'chart-line'} text-white text-sm`}></i>
+                    <span className="text-white text-[9px] font-medium mt-1">{isCheckingPlagiarism ? 'Analyzing' : 'Report'}</span>
+                  </button>
+                </>
+              )}
+            </div>
                   </button>
 
                   {/* Generate Report */}
@@ -3333,7 +3355,8 @@ useEffect(() => {
                     }`}
                     title={isCheckingPlagiarism ? 'Analyzing...' : 'Generate Report'}
                   >
-                    <i className={`fas fa-${isCheckingPlagiarism ? 'spinner fa-spin' : 'chart-line'} text-white`}></i>
+                    <i className={`fas fa-${isCheckingPlagiarism ? 'spinner fa-spin' : 'chart-line'} text-white text-sm`}></i>
+                    <span className="text-white text-[9px] font-medium mt-1">{isCheckingPlagiarism ? 'Analyzing' : 'Report'}</span>
                   </button>
                 </>
               )}
@@ -3353,14 +3376,11 @@ useEffect(() => {
         </div>
       )}
 
-      {/* Tab switch modal — candidate only (interviewer uses sidebar strip) */}
-      {showTabWarning && userRole === 'candidate' && (
+      {/* ── Tab Switch Warning Popup — shown on BOTH candidate and interviewer ── */}
+      {showTabWarning && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
-          {/* Backdrop */}
           <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
-
           <div className="relative bg-gray-900 border-2 border-red-500/60 rounded-2xl shadow-2xl w-full max-w-md p-6 animate-in zoom-in-95 duration-200">
-            {/* Red pulsing icon */}
             <div className="flex items-center justify-center mb-4">
               <div className="relative">
                 <div className="absolute inset-0 bg-red-500/30 rounded-full blur-xl animate-pulse"></div>
@@ -3370,23 +3390,21 @@ useEffect(() => {
               </div>
             </div>
 
-            {/* Title */}
             <h2 className="text-xl font-bold text-white text-center mb-2">
-              ⚠️ Tab Switch Detected
+              {userRole === 'candidate' ? '⚠️ Tab Switch Detected' : '⚠️ Candidate Left Tab'}
             </h2>
 
-            {/* Message */}
             <p className="text-gray-300 text-sm text-center mb-4 leading-relaxed">
-              You switched away from this interview tab. This action has been recorded and shared with the interviewer.
+              {userRole === 'candidate'
+                ? 'You switched away from this interview tab. This action has been recorded and reported to the interviewer.'
+                : 'The candidate has switched away from the interview tab. This may indicate suspicious activity.'}
             </p>
 
-            {/* Count badge */}
             <div className="flex items-center justify-center mb-5">
               <div className="bg-red-500/20 border border-red-500/40 rounded-xl px-4 py-2 flex items-center space-x-3">
                 <i className="fas fa-flag text-red-400"></i>
                 <span className="text-white font-semibold text-sm">
-                  Your tab switches:{' '}
-                  <span className="text-red-400 font-bold text-lg">{tabSwitchCount}</span>
+                  Total tab switches: <span className="text-red-400 font-bold text-lg">{tabSwitchCount}</span>
                 </span>
               </div>
             </div>
@@ -3397,12 +3415,11 @@ useEffect(() => {
               </p>
             )}
 
-            {/* Dismiss button */}
             <button
               onClick={() => setShowTabWarning(false)}
               className="w-full py-3 bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 text-white font-semibold rounded-xl transition-all hover:scale-105"
             >
-              I Understand — Return to Interview
+              {userRole === 'candidate' ? 'I Understand — Return to Interview' : 'Dismiss'}
             </button>
           </div>
         </div>
