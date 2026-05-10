@@ -3340,27 +3340,6 @@ useEffect(() => {
                 </>
               )}
             </div>
-                  </button>
-
-                  {/* Generate Report */}
-                  <button
-                    onClick={checkPlagiarism}
-                    disabled={!fullTranscript || fullTranscript.trim().length === 0 || isCheckingPlagiarism}
-                    className={`p-2.5 rounded-lg transition-all hover:scale-105 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:scale-100 ${
-                      !fullTranscript || fullTranscript.trim().length === 0
-                        ? 'bg-gray-800 text-gray-600'
-                        : isCheckingPlagiarism
-                          ? 'bg-yellow-500 hover:bg-yellow-600 animate-pulse'
-                          : 'bg-indigo-600 hover:bg-indigo-500'
-                    }`}
-                    title={isCheckingPlagiarism ? 'Analyzing...' : 'Generate Report'}
-                  >
-                    <i className={`fas fa-${isCheckingPlagiarism ? 'spinner fa-spin' : 'chart-line'} text-white text-sm`}></i>
-                    <span className="text-white text-[9px] font-medium mt-1">{isCheckingPlagiarism ? 'Analyzing' : 'Report'}</span>
-                  </button>
-                </>
-              )}
-            </div>
 
             {/* Right: spacer to balance layout */}
             <div className="w-24"></div>
